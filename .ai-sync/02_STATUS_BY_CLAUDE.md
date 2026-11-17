@@ -36,3 +36,8 @@
 - INTEGRATION_GUIDE.md: from the plan; removed the non-existent `webgl` param, added `control`.
 - Checked: node --check, php -l, Apache (XAMPP) run of demo: modal, guide, toast, ready/saved messages, file written back. No .wasm rebuild.
 - Not verified: other browsers, mobile layout, ?control=1 API, real auth.
+
+## Security/UX hardening (2026-11-17)
+- get_pdf.php / save_pdf.php: strict id check (400 invalid id); double-extension names flattened; pdf_store/.htaccess auto-created.
+- bridge.js: postMessage `company-pdf:trigger-save` (same origin), drag-drop hint in guide, mobile CSS. company_demo.php: iframe focus, Ctrl/Cmd+S forwarding, mobile CSS.
+- Tested on PHP built-in server: ids, double ext, parent Ctrl+S saved file (200 -> 504 bytes), 375px no horizontal overflow. Not tested: Apache .htaccess deny, other browsers.

@@ -42,6 +42,16 @@
       display: inline-flex; align-items: center; gap: 6px; transition: background 0.15s;
     }
     .pc-help-btn:hover { background: #1d4ed8; }
+    @media (max-width: 640px) {
+      .pc-modal-backdrop { padding: 8px; }
+      .pc-modal { width: 100%; max-width: 100%; max-height: calc(100vh - 16px); border-radius: 12px; }
+      .pc-modal-header { padding: 14px 16px; }
+      .pc-modal-header h2 { font-size: 16px; }
+      .pc-modal-body { padding: 12px 16px; max-height: 56vh; }
+      .pc-modal-footer { padding: 12px 16px; display: flex; flex-wrap: wrap; gap: 8px; }
+      .pc-modal-footer button { flex: 1 1 100%; }
+      .pc-help-btn { right: 8px; bottom: 8px; padding: 5px 10px; font-size: 12px; opacity: 0.85; }
+    }
 
     .pc-modal-backdrop {
       position: fixed; inset: 0; background: rgba(15,23,42,0.65);
@@ -145,7 +155,7 @@
             <div class="pc-tool-badge">4</div>
             <div>
               <div class="pc-tool-title">การหมุนหน้า สลับหน้า หรือรวมไฟล์ (Organize pages)</div>
-              <div class="pc-tool-desc">เลือกเมนู <b>Organize pages</b> เพื่อหมุนหน้ากระดาษที่กลับหัว ลบหน้าที่ไม่ต้องการ หรือแทรกหน้าจากไฟล์ PDF อื่น</div>
+              <div class="pc-tool-desc">เลือกเมนู <b>Organize pages</b> เพื่อหมุนหน้ากระดาษที่กลับหัว ลบหน้าที่ไม่ต้องการ หรือแทรกหน้าจากไฟล์ PDF อื่น ลากไฟล์ PDF อื่นจากเครื่องมาวางบนหน้าจอเพื่อแทรกหรือรวมหน้าได้ทันที</div>
             </div>
           </li>
           <li class="pc-tool-item">
@@ -227,6 +237,17 @@
       showToast(`ไม่สามารถเปิดไฟล์ PDF ได้ (${err.message})`, "err", 6000);
       window.alert(`ไม่สามารถเปิดไฟล์ PDF จากเซิร์ฟเวอร์ได้ (${err.message})`);
     }
+  });
+
+  // Ask from the host page: save through the app, same origin only.
+  window.addEventListener("message", (event) => {
+    if (event.origin !== window.location.origin || event.data?.type !== "company-pdf:trigger-save") return;
+    canvas.focus();
+    if (typeof window.pdfcraft?.execute === "function") {
+      try { window.pdfcraft.execute("file.save"); return; } catch (err) { console.warn("bridge.js: execute failed", err); }
+    }
+    const init = { key: "s", code: "KeyS", ctrlKey: true, bubbles: true, cancelable: true };
+    canvas.dispatchEvent(new KeyboardEvent("keydown", init));
   });
 
   // 5. Forward dirty state to parent company page (if embedded in iframe)

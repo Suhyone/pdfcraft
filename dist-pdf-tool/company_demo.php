@@ -33,6 +33,18 @@ $documents = [
     .editor-topbar .dirty-dot { width: 8px; height: 8px; border-radius: 50%; background: #f59e0b; display: none; }
     .editor-topbar .dirty-dot.show { display: inline-block; }
     .editor-frame { flex: 1; width: 100%; border: 0; background: #19191c; }
+    @media (max-width: 640px) {
+      body { padding: 8px; }
+      .container { padding: 14px; border-radius: 8px; }
+      table, thead, tbody, tr, th, td { display: block; }
+      thead { display: none; }
+      tr { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 10px; padding: 6px 0; }
+      td { border-bottom: 0; padding: 6px 12px; overflow-wrap: anywhere; }
+      td .btn { margin: 2px 4px 2px 0; }
+      .editor-topbar { padding: 0 8px; font-size: 13px; gap: 8px; }
+      .editor-topbar .doc-title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+      .btn-close { padding: 6px 10px; white-space: nowrap; }
+    }
     .btn-close { background: #ef4444; color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; }
   </style>
 </head>
@@ -101,7 +113,9 @@ $documents = [
       isDirty = false;
       document.getElementById("dirty-indicator").classList.remove("show");
       document.getElementById("modal-doc-name").textContent = docName;
-      document.getElementById("pdf-iframe").src = url;
+      const frame = document.getElementById("pdf-iframe");
+      frame.onload = () => { try { frame.contentWindow.focus(); } catch {} };
+      frame.src = url;
       document.getElementById("pdf-modal").classList.add("open");
     }
 
@@ -120,6 +134,17 @@ $documents = [
       activeDocId = null;
       isDirty = false;
     }
+
+    // Ctrl+S / Cmd+S on the host page while the editor is open: save through the editor, not the browser.
+    window.addEventListener("keydown", (e) => {
+      if (!document.querySelector("#pdf-modal.open")) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        const frame = document.getElementById("pdf-iframe");
+        frame.contentWindow?.postMessage({ type: "company-pdf:trigger-save" }, window.location.origin);
+        try { frame.contentWindow?.focus(); } catch {}
+      }
+    });
 
     // รับ Event จาก bridge.js เมื่อผู้ใช้แก้ไขหรือกด Save ในโปรแกรม PDF
     window.addEventListener("message", (event) => {
