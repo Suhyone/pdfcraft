@@ -28,3 +28,11 @@
 - dist-pdf-tool/NOTICE: removed the logo/trademark paragraph; the copyright line still names "ArtCraft Team" (same in LICENSE-MIT).
 - Committed: small hand-written package files only; build output is ignored via dist-pdf-tool/.gitignore.
 - Not verified: Thai file names on a Linux/UTF-8 host (Windows PHP writes them in the ANSI codepage).
+
+## Phase 2 spec (onboarding, toast, postMessage, company demo) - done
+- bridge.js (src + dist copy): first-time guide for 5 tools (menu names match the app), "? คู่มือใช้งาน" button, toasts, postMessage ready/dirty/saved to same origin. Short HTTP error text kept.
+- company_demo.php: modal iframe + new tab; buttons use data-* attributes (no JS string injection).
+- save_pdf.php: ?id=<id> stores <id>.pdf so get_pdf.php finds the saved file.
+- INTEGRATION_GUIDE.md: from the plan; removed the non-existent `webgl` param, added `control`.
+- Checked: node --check, php -l, Apache (XAMPP) run of demo: modal, guide, toast, ready/saved messages, file written back. No .wasm rebuild.
+- Not verified: other browsers, mobile layout, ?control=1 API, real auth.

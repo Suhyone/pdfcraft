@@ -11,6 +11,9 @@ $base = substr(strrchr('/' . $rawName, '/'), 1);
 $name = preg_replace('/[^\p{L}\p{M}\p{N}._-]/u', '_', $base);
 if (!preg_match('/\.pdf$/i', $name)) { $name .= '.pdf'; }
 if ($name === '.pdf' || $name === '') { $name = 'document.pdf'; }
+// With ?id=<id> the file is stored as <id>.pdf, which is the name get_pdf.php reads.
+$id = preg_replace('/[^A-Za-z0-9_-]/', '', $_GET['id'] ?? '');
+if ($id !== '') { $name = $id . '.pdf'; }
 $dir = __DIR__ . '/../pdf_store';
 if (!is_dir($dir)) { mkdir($dir, 0750, true); }
 if (!move_uploaded_file($tmp, "$dir/$name")) { http_response_code(500); exit('save failed'); }
