@@ -46,7 +46,8 @@
       const res = await fetch(saveUrl, { method: "POST", body: form, credentials: "same-origin" });
       const text = (await res.text()).trim();
       if (!res.ok || (text && text !== "ok" && !text.startsWith("{"))) {
-        throw new Error(text || `HTTP ${res.status}`);
+        // An error page is not shown whole: give the status, or a short message from the server.
+        throw new Error(!res.ok || !text ? `HTTP ${res.status}` : text.slice(0, 120));
       }
     } catch (err) {
       console.error("bridge.js: failed to save PDF to PHP:", err);

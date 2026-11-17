@@ -21,3 +21,10 @@
 ## Hardening (bridge.js, .htaccess, save_pdf.php) - done
 - bridge.js: same-origin URL lock, %PDF- check, Thai alerts. .htaccess: immutable cache for hashed .wasm/.js, no-cache for index.html and bridge.js (no COOP header, on purpose). save_pdf.php: UTF-8 file names, forced .pdf.
 - Tested on PHP built-in server: load, save, Thai/hostile names, cross-origin URLs ignored. Not tested: real Apache (.htaccess), Linux file names.
+
+## Follow-up checks - done
+- Apache (XAMPP, isolated config on :8088, since stopped): .htaccess headers correct; wasm gzip 50.9 MB -> 19.3 MB; PHP load/save ok.
+- Thai alerts verified for load (HTTP 404) and save failures; save alert now shows the status, not the whole error page.
+- dist-pdf-tool/NOTICE: removed the logo/trademark paragraph; the copyright line still names "ArtCraft Team" (same in LICENSE-MIT).
+- Committed: small hand-written package files only; build output is ignored via dist-pdf-tool/.gitignore.
+- Not verified: Thai file names on a Linux/UTF-8 host (Windows PHP writes them in the ANSI codepage).
