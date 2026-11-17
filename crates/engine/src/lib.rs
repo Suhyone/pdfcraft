@@ -24,6 +24,7 @@ pub mod commands;
 mod comments;
 pub mod compare;
 mod copy_image;
+pub mod vector_json;
 pub use copy_image::{PagePicture, picture_at};
 pub mod dates;
 mod document;

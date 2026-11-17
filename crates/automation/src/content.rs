@@ -456,3 +456,29 @@ impl Automation {
         Ok(result)
     }
 }
+
+impl Automation {
+    /// The painted paths of a page that touch `rect` (page user space), at most 500, with
+    /// the ids `vector_edit` takes. Ids count the painted paths of the page, so they change
+    /// when content is edited: list again after an edit.
+    pub(crate) fn vector_list(&self, a: &Args) -> Result<Value> {
+        let page = self.page(a)?;
+        let rect = a.get("rect").ok_or_else(|| Args::missing("rect"))?;
+        let rect = pdfcraft_engine::vector_json::parse_rect(rect).map_err(ToolError::InvalidArgs)?;
+        let paths = self.doc(a)?.vector_paths_in_region(page, rect).map_err(failed)?;
+        let mut out = pdfcraft_engine::vector_json::paths_json(&paths);
+        out["page"] = json!(page + 1);
+        out["count"] = json!(paths.len());
+        Ok(out)
+    }
+
+    /// Delete, reshape and add line-art paths on a page as one undo step.
+    pub(crate) fn vector_edit(&mut self, a: &Args) -> Result<Value> {
+        let page = self.page(a)?;
+        let edits = pdfcraft_engine::vector_json::parse_edits(a.0).map_err(ToolError::InvalidArgs)?;
+        let touched = edits.len();
+        let mut result = self.apply(a, Edit::EditVectors { page, edits })?;
+        result["edited"] = json!(touched);
+        Ok(result)
+    }
+}

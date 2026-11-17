@@ -1,7 +1,8 @@
-//! `vector.extract` and `vector.apply`: the page's line art as JSON for a host page, and its
-//! edits back. Coordinates are PDF user space (bottom-up points), as in the engine.
+//! The page's line art as JSON for a host page or an agent, and its edits back (`vector.extract`
+//! and `vector.apply` of the control channel, `vector_list` and `vector_edit` of the automation
+//! tools). Coordinates are PDF user space (bottom-up points), as in the editing code.
 
-use pdfcraft_engine::{NewVectorPath, PathSeg, VectorEdits, VectorPatch, VectorPath};
+use crate::{NewVectorPath, PathSeg, VectorEdits, VectorPatch, VectorPath};
 use serde_json::{Value, json};
 
 /// Points sampled along each curve segment for display.
@@ -42,7 +43,7 @@ fn flatten(segs: &[PathSeg]) -> (Vec<[f64; 2]>, bool) {
 }
 
 /// The reply of `vector.extract`.
-pub(super) fn paths_json(paths: &[VectorPath]) -> Value {
+pub fn paths_json(paths: &[VectorPath]) -> Value {
     let list: Vec<Value> = paths
         .iter()
         .map(|p| {
@@ -66,14 +67,23 @@ fn number(p: &Value, key: &str) -> Result<f64, String> {
     p.get(key).and_then(Value::as_f64).filter(|v| v.is_finite()).ok_or_else(|| format!("{key} must be a finite number"))
 }
 
-fn page_of(p: &Value) -> Result<usize, String> {
+/// The 0-based `page` of a control request.
+pub fn page_of(p: &Value) -> Result<usize, String> {
     p.get("page").and_then(Value::as_u64).and_then(|v| usize::try_from(v).ok()).ok_or_else(|| "page must be a 0-based page number".to_string())
 }
 
 /// The page and region of a `vector.extract` request: `{page, x, y, w, h}`.
-pub(super) fn parse_region(p: &Value) -> Result<(usize, [f64; 4]), String> {
+pub fn parse_region(p: &Value) -> Result<(usize, [f64; 4]), String> {
     let (x, y, w, h) = (number(p, "x")?, number(p, "y")?, number(p, "w")?, number(p, "h")?);
     Ok((page_of(p)?, [x, y, x + w, y + h]))
+}
+
+/// A region given as `[x0, y0, x1, y1]`.
+pub fn parse_rect(v: &Value) -> Result<[f64; 4], String> {
+    match v.as_array().map(|a| a.iter().map(Value::as_f64).collect::<Vec<_>>()).as_deref() {
+        Some([Some(a), Some(b), Some(c), Some(d)]) if [a, b, c, d].iter().all(|n| n.is_finite()) => Ok([*a, *b, *c, *d]),
+        _ => Err("rect must be four finite numbers [x0, y0, x1, y1] in page user space".into()),
+    }
 }
 
 fn colour(v: &Value) -> Result<[f64; 3], String> {
@@ -111,11 +121,10 @@ fn segments(entry: &Value) -> Result<Vec<PathSeg>, String> {
     Ok(segs)
 }
 
-/// The page and edits of a `vector.apply` request:
-/// `{page, deleted: [id], modified: [{id?, points, strokeWidth?, color?, closed?}]}`. A modified
-/// entry with an `id` reshapes that path; one without adds a new stroked path.
-pub(super) fn parse_edits(p: &Value) -> Result<(usize, VectorEdits), String> {
-    let page = page_of(p)?;
+/// The edits of a request `{deleted: [id], modified: [{id?, points, strokeWidth?, color?,
+/// closed?}]}`. A modified entry with an `id` reshapes that path; one without adds a new stroked
+/// path.
+pub fn parse_edits(p: &Value) -> Result<VectorEdits, String> {
     let mut edits = VectorEdits::default();
     if let Some(d) = p.get("deleted") {
         let list = d.as_array().ok_or("deleted must be a list of path ids")?;
@@ -147,7 +156,7 @@ pub(super) fn parse_edits(p: &Value) -> Result<(usize, VectorEdits), String> {
     if edits.is_empty() {
         return Err("nothing to apply: give deleted ids or modified paths".into());
     }
-    Ok((page, edits))
+    Ok(edits)
 }
 
 #[cfg(test)]
@@ -167,8 +176,8 @@ mod tests {
             {"id": 1, "points": [[0, 0], [5, 5]], "strokeWidth": 2, "color": "#ff0000"},
             {"points": [[1, 1], [2, 2], [3, 1]], "closed": true}
         ]});
-        let (page, e) = parse_edits(&req).unwrap();
-        assert_eq!((page, e.deleted.clone()), (0, vec![4]));
+        let e = parse_edits(&req).unwrap();
+        assert_eq!(e.deleted, vec![4]);
         assert_eq!(e.patches.len(), 1);
         assert_eq!(e.patches[0].color, Some([1.0, 0.0, 0.0]));
         assert_eq!(e.added.len(), 1);

@@ -14760,3 +14760,43 @@ fn grouped_existing_thai_body_edits_saves_reopens_and_undo_restores_original_gly
     assert_eq!(page_text(&mut a, reopened), [new, old]);
     assert_eq!(ok(&mut a, "content_list", json!({"doc":reopened}))["count"], 0, "editing existing text must not create Add Text objects");
 }
+
+/// Line-art editing headlessly: a path is added, found by region, restyled, deleted, and each step
+/// is one undo; a stale id refuses the edit and changes nothing.
+#[test]
+fn vector_paths_are_listed_and_edited_through_tools() {
+    let dir = workdir("vector-edit");
+    let mut a = auto(&dir);
+    let doc = ok(&mut a, "doc_open", json!({"path":"a.pdf"}))["doc"].as_u64().unwrap();
+    let region = json!([-1e5, -1e5, 1e5, 1e5]);
+    let before = ok(&mut a, "vector_list", json!({"doc":doc,"page":1,"rect":region}))["count"].as_u64().unwrap();
+    let added = json!([{"points":[[10, 10], [110, 10], [110, 60]], "strokeWidth": 3, "color": "#ff0000"}]);
+    assert_eq!(ok(&mut a, "vector_edit", json!({"doc":doc,"page":1,"modified":added}))["edited"], 1);
+    let listed = ok(&mut a, "vector_list", json!({"doc":doc,"page":1,"rect":[0, 0, 200, 100]}));
+    let path = listed["paths"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(listed["count"].as_u64().unwrap() + 0, listed["paths"].as_array().unwrap().len() as u64);
+    assert_eq!(path["points"], json!([[10.0, 10.0], [110.0, 10.0], [110.0, 60.0]]));
+    assert_eq!(path["color"], "#ff0000");
+    assert!((path["strokeWidth"].as_f64().unwrap() - 3.0).abs() < 1e-6);
+    let id = path["id"].clone();
+    ok(&mut a, "vector_edit", json!({"doc":doc,"page":1,"modified":[{"id":id,"points":[[0, 0], [50, 50]]}]}));
+    let moved = ok(&mut a, "vector_list", json!({"doc":doc,"page":1,"rect":[0, 0, 200, 100]}));
+    assert_eq!(moved["paths"].as_array().unwrap().last().unwrap()["points"], json!([[0.0, 0.0], [50.0, 50.0]]));
+    ok(&mut a, "vector_edit", json!({"doc":doc,"page":1,"deleted":[id]}));
+    assert_eq!(ok(&mut a, "vector_list", json!({"doc":doc,"page":1,"rect":region}))["count"].as_u64().unwrap(), before);
+    ok(&mut a, "edit_undo", json!({"doc":doc}));
+    assert_eq!(ok(&mut a, "vector_list", json!({"doc":doc,"page":1,"rect":region}))["count"].as_u64().unwrap(), before + 1);
+    let snapshot = ok(&mut a, "vector_list", json!({"doc":doc,"page":1,"rect":region}));
+    for bad in [
+        json!({"deleted":[99999]}),
+        json!({"deleted":[]}),
+        json!({"modified":[{"points":[[0, 0]]}]}),
+        json!({"modified":[{"id":0,"points":[[0, 0], [1, 1]],"color":"nope"}]}),
+    ] {
+        let mut args = json!({"doc":doc,"page":1});
+        args.as_object_mut().unwrap().extend(bad.as_object().unwrap().clone());
+        assert!(a.call("vector_edit", &args).is_err(), "{args}");
+        assert_eq!(ok(&mut a, "vector_list", json!({"doc":doc,"page":1,"rect":region})), snapshot, "a refused edit changes nothing");
+    }
+    assert!(a.call("vector_list", &json!({"doc":doc,"page":1,"rect":[0, 0, 1]})).is_err());
+}

@@ -17,12 +17,13 @@ impl Control {
             }
             "vector.extract" => {
                 only_params(p, method, &["page", "x", "y", "w", "h"])?;
-                let (page, region) = super::vectors::parse_region(p)?;
+                let (page, region) = pdfcraft_engine::vector_json::parse_region(p)?;
                 Ok(Handled::Now(host.vector_extract(page, region)))
             }
             "vector.apply" => {
                 only_params(p, method, &["page", "deleted", "modified"])?;
-                let (page, edits) = super::vectors::parse_edits(p)?;
+                let page = pdfcraft_engine::vector_json::page_of(p)?;
+                let edits = pdfcraft_engine::vector_json::parse_edits(p)?;
                 Ok(Handled::Now(host.vector_apply(page, edits)))
             }
             "ui.commands" => Ok(Handled::Now(Ok(host.commands()))),

@@ -66,7 +66,6 @@ mod requests;
 mod screenshot;
 #[cfg(not(target_arch = "wasm32"))]
 mod transport;
-mod vectors;
 
 pub use plugin::ControlPlugin;
 use plugin::expire_input;
