@@ -18,6 +18,9 @@
   const saveUrl = sameOriginUrl(params.get("save_url"), "save_pdf.php");
   const docName = (params.get("name") || "document.pdf").trim() || "document.pdf";
   const hideHelp = params.get("help") === "0";
+  const readOnly = params.get("readonly") === "1" || params.get("save") === "0";
+  // Optimistic locking: the version of the file we opened (from ?version= or the ETag).
+  let currentVersion = params.get("version") || "";
 
   // 2. Inject lightweight UI styles (Toast + First-Time Onboarding Modal + Floating Help Button)
   const style = document.createElement("style");
@@ -161,6 +164,13 @@
           <li class="pc-tool-item">
             <div class="pc-tool-badge">5</div>
             <div>
+              <div class="pc-tool-title">การแก้ไขเส้นแบบแปลน/CAD (Edit vector lines)</div>
+              <div class="pc-tool-desc">เลือกเมนู <b>Edit ▸ Edit vector lines</b> แล้วลากกรอบครอบเส้นที่ต้องการ จะได้จุดที่ลากแก้ไขเส้นได้ หรือเลือกเส้นแล้วกด <span class="pc-kbd">Delete</span> เพื่อลบ ถ้าแบบแปลนมีเส้นจำนวนมาก แนะนำให้ซูมเข้าเฉพาะจุดที่จะแก้</div>
+            </div>
+          </li>
+          <li class="pc-tool-item">
+            <div class="pc-tool-badge">6</div>
+            <div>
               <div class="pc-tool-title">การบันทึกไฟล์กลับเข้าระบบบริษัททันที (Save)</div>
               <div class="pc-tool-desc">เมื่อแก้ไขเสร็จ กด <span class="pc-kbd">Ctrl</span> + <span class="pc-kbd">S</span> (หรือเมนู <b>File ▸ Save</b>) ระบบจะบันทึกไฟล์กลับเข้าเซิร์ฟเวอร์โดยอัตโนมัติ ไม่ต้องดาวน์โหลดลงเครื่อง</div>
             </div>
@@ -227,6 +237,10 @@
     try {
       const res = await fetch(loadUrl, { credentials: "same-origin", cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!currentVersion) {
+        const etag = res.headers.get("ETag");
+        if (etag) currentVersion = etag.replace(/^W\//, "").replace(/^"|"$/g, "");
+      }
       const bytes = await res.arrayBuffer();
       const head = new TextDecoder("ascii").decode(bytes.slice(0, 5));
       if (head !== "%PDF-") throw new Error("Invalid PDF response from server");
@@ -263,6 +277,10 @@
   // 6. Save the PDF back to PHP (UTF-8 filenames supported)
   canvas.addEventListener("pdfcraft:save", async (event) => {
     const { name, bytes, saveAs } = event.detail;
+    if (readOnly) {
+      showToast("เปิดในโหมดอ่านอย่างเดียว ไม่สามารถบันทึกเข้าระบบได้", "err", 5000);
+      return;
+    }
     const finalName = (name || docName).trim() || "document.pdf";
     showToast(`กำลังบันทึก "${finalName}" เข้าสู่ระบบ...`, "", 0);
     try {
@@ -270,8 +288,16 @@
       form.append("file", new Blob([bytes], { type: "application/pdf" }), finalName);
       form.append("name", finalName);
       form.append("save_as", saveAs ? "1" : "0");
-      const res = await fetch(saveUrl, { method: "POST", body: form, credentials: "same-origin" });
+      const headers = { "X-Requested-With": "XMLHttpRequest" };
+      if (currentVersion) headers["If-Match"] = currentVersion;
+      const res = await fetch(saveUrl, { method: "POST", body: form, credentials: "same-origin", headers });
       const text = (await res.text()).trim();
+      if (text.startsWith("{")) {
+        try {
+          const v = JSON.parse(text).version;
+          if (v !== undefined && v !== null && v !== "") currentVersion = String(v);
+        } catch {}
+      }
       if (!res.ok || (text && text !== "ok" && !text.startsWith("{"))) {
         // An error page is not shown whole: give the status, or a short message from the server.
         throw new Error(!res.ok || !text ? `HTTP ${res.status}` : text.slice(0, 120));
