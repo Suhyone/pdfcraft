@@ -17,3 +17,7 @@
 - dist-pdf-tool/ (53 MB, not committed): build output, bridge.js, .htaccess, get_pdf.php, save_pdf.php, LICENSE-MIT, LICENSE-APACHE, NOTICE.
 - "ArtCraft" remains only in LICENSE-MIT / NOTICE (copyright line + trademark paragraph for removed logos). Kept as-is on purpose.
 - Not verified: running in a browser / against real PHP.
+
+## Hardening (bridge.js, .htaccess, save_pdf.php) - done
+- bridge.js: same-origin URL lock, %PDF- check, Thai alerts. .htaccess: immutable cache for hashed .wasm/.js, no-cache for index.html and bridge.js (no COOP header, on purpose). save_pdf.php: UTF-8 file names, forced .pdf.
+- Tested on PHP built-in server: load, save, Thai/hostile names, cross-origin URLs ignored. Not tested: real Apache (.htaccess), Linux file names.
