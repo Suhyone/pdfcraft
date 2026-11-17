@@ -291,6 +291,7 @@ impl Edit {
             Edit::EditTextLine { .. } | Edit::EditTextBlock { .. } => Label::of("Edit text"),
             Edit::PrepareText { .. } => Label::of("Prepare grouped text"),
             Edit::RegisterTextFont { .. } => Label::of("Load document font"),
+            Edit::EditVectors { edits, .. } => plural("Edit vector path", "Edit vector paths", edits.len()),
             Edit::MoveObjects { objects, .. } => plural("Move object", "Move objects", objects.len()),
             Edit::EditPageImage { change, .. } => Label::of(match change {
                 ImageEdit::Move(_) => "Move image",

@@ -70,6 +70,8 @@ pub use printer_marks::{PrinterMarks, add_printer_marks};
 mod colour;
 pub mod convert_colours;
 pub mod hairlines;
+pub mod vectors;
+pub use vectors::{NewVectorPath, PathSeg, VectorEdits, VectorPatch, VectorPath, update_vector_paths, vector_paths_in_region};
 mod page_streams;
 pub use convert_colours::{ColourTarget, ConvertColours, Converted as ColoursConverted, ImageRecolour, convert_colours};
 pub use hairlines::{Fixed as HairlinesFixed, Hairlines, fix_hairlines};

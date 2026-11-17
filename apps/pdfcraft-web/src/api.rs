@@ -68,13 +68,71 @@ mod web {
     /// Put `window.pdfcraft` on the page, sending its calls through `client`. An existing
     /// `window.pdfcraft` keeps the functions it already has.
     pub fn install(client: ControlClient) {
+        let client = Rc::new(client);
+        let for_request = Rc::clone(&client);
         let request: Request = Rc::new(move |method, params| {
             let params = if method == "ui.command" { command_params(params) } else { params };
-            Box::pin(wait(client.send(&method, params)))
+            Box::pin(wait(for_request.send(&method, params)))
         });
-        if let Err(e) = Rc::new(PageApi::new(APP, methods(), request)).install() {
-            eframe::web_sys::console::warn_1(&format!("PdfCraft: couldn't install window.{APP}: {e:?}").into());
+        match Rc::new(PageApi::new(APP, methods(), request)).install() {
+            Ok(_) => install_vector_functions(&client),
+            Err(e) => eframe::web_sys::console::warn_1(&format!("PdfCraft: couldn't install window.{APP}: {e:?}").into()),
         }
+    }
+
+    /// `window.pdfcraft.extractVectorsInRect(page, x, y, w, h)` and
+    /// `window.pdfcraft.applyVectorEdits(page, deletedIds, modifiedPaths)`: promises over the
+    /// control channel's `vector.extract` and `vector.apply`. Pages are 0-based, coordinates are
+    /// PDF user space (bottom-up points). Each promise resolves with the result object or rejects
+    /// with the error text.
+    fn install_vector_functions(client: &Rc<ControlClient>) {
+        use eframe::wasm_bindgen::{JsCast, JsValue, closure::Closure};
+
+        let Some(window) = web_sys::window() else { return };
+        let Ok(api) = js_sys::Reflect::get(&window, &"pdfcraft".into()) else { return };
+        if !api.is_object() {
+            return;
+        }
+        let number = |v: &JsValue| v.as_f64().map_or(Value::Null, |n| json!(n));
+        // A JS array or object as JSON; anything that is not JSON-serialisable is null.
+        let value_of = |v: &JsValue| -> Value {
+            js_sys::JSON::stringify(v).ok().and_then(|s| s.as_string()).and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(Value::Null)
+        };
+        let call = |client: Rc<ControlClient>, method: &'static str, params: Value| {
+            wasm_bindgen_futures::future_to_promise(async move {
+                match wait(client.send(method, params)).await {
+                    reply if reply["ok"] == json!(true) => {
+                        let text = reply["result"].to_string();
+                        js_sys::JSON::parse(&text).map_err(|_| JsValue::from_str("the app's reply was not readable"))
+                    }
+                    reply => Err(JsValue::from_str(reply["error"].as_str().unwrap_or("the request failed"))),
+                }
+            })
+        };
+        let for_extract = Rc::clone(client);
+        let extract = Closure::<dyn Fn(JsValue, JsValue, JsValue, JsValue, JsValue) -> js_sys::Promise>::new(
+            move |page: JsValue, x: JsValue, y: JsValue, w: JsValue, h: JsValue| {
+                let params = json!({ "page": number(&page), "x": number(&x), "y": number(&y), "w": number(&w), "h": number(&h) });
+                call(Rc::clone(&for_extract), "vector.extract", params)
+            },
+        );
+        let for_apply = Rc::clone(client);
+        let apply =
+            Closure::<dyn Fn(JsValue, JsValue, JsValue) -> js_sys::Promise>::new(move |page: JsValue, deleted: JsValue, modified: JsValue| {
+                let mut params = json!({ "page": number(&page) });
+                if !deleted.is_undefined() && !deleted.is_null() {
+                    params["deleted"] = value_of(&deleted);
+                }
+                if !modified.is_undefined() && !modified.is_null() {
+                    params["modified"] = value_of(&modified);
+                }
+                call(Rc::clone(&for_apply), "vector.apply", params)
+            });
+        let _ = js_sys::Reflect::set(&api, &"extractVectorsInRect".into(), extract.as_ref().unchecked_ref());
+        let _ = js_sys::Reflect::set(&api, &"applyVectorEdits".into(), apply.as_ref().unchecked_ref());
+        // The page keeps these for its lifetime.
+        extract.forget();
+        apply.forget();
     }
 
     /// The app's reply, polled about once a frame.

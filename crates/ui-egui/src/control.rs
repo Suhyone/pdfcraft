@@ -66,6 +66,7 @@ mod requests;
 mod screenshot;
 #[cfg(not(target_arch = "wasm32"))]
 mod transport;
+mod vectors;
 
 pub use plugin::ControlPlugin;
 use plugin::expire_input;
@@ -245,6 +246,14 @@ pub(crate) trait Host {
     fn open(&mut self, path: &str) -> Reply;
     /// Request application exit; returns whether it closed without asking for confirmation.
     fn quit(&mut self, ctx: &egui::Context) -> bool;
+    /// The line art `vector.extract` asks for: page and region (page user space).
+    fn vector_extract(&mut self, _page: usize, _region: [f64; 4]) -> Reply {
+        Err("vector.extract needs a document".into())
+    }
+    /// The edit `vector.apply` asks for, applied to the active document as one undoable step.
+    fn vector_apply(&mut self, _page: usize, _edits: pdfcraft_engine::VectorEdits) -> Reply {
+        Err("vector.apply needs a document".into())
+    }
 
     /// A generation that changes when the input target (document, dialog, focus) does.
     ///

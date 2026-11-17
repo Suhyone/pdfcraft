@@ -15,6 +15,16 @@ impl Control {
                 state["window"] = json!({ "width": size.x, "height": size.y, "pixels_per_point": geometry.pixels_per_point });
                 Ok(Handled::Now(Ok(state)))
             }
+            "vector.extract" => {
+                only_params(p, method, &["page", "x", "y", "w", "h"])?;
+                let (page, region) = super::vectors::parse_region(p)?;
+                Ok(Handled::Now(host.vector_extract(page, region)))
+            }
+            "vector.apply" => {
+                only_params(p, method, &["page", "deleted", "modified"])?;
+                let (page, edits) = super::vectors::parse_edits(p)?;
+                Ok(Handled::Now(host.vector_apply(page, edits)))
+            }
             "ui.commands" => Ok(Handled::Now(Ok(host.commands()))),
             "ui.panel" | "ui.dock.reset" => Ok(Handled::Now(host.panel(method == "ui.dock.reset", p))),
             "ui.command" if str_param("id")? == "ui.panel" => Ok(Handled::Now(host.panel(false, p.get("params").unwrap_or(p)))),
