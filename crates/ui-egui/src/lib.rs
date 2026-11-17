@@ -191,6 +191,7 @@ use tools::redact_ui;
 use tools::sign_ui;
 use tools::stamps_ui;
 use tools::tags_ui;
+use tools::vector_ui;
 use widgets::icon_data;
 pub use widgets::icons;
 use workflows::a11y_ui;

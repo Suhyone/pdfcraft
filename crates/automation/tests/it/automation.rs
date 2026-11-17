@@ -14774,7 +14774,7 @@ fn vector_paths_are_listed_and_edited_through_tools() {
     assert_eq!(ok(&mut a, "vector_edit", json!({"doc":doc,"page":1,"modified":added}))["edited"], 1);
     let listed = ok(&mut a, "vector_list", json!({"doc":doc,"page":1,"rect":[0, 0, 200, 100]}));
     let path = listed["paths"].as_array().unwrap().last().unwrap().clone();
-    assert_eq!(listed["count"].as_u64().unwrap() + 0, listed["paths"].as_array().unwrap().len() as u64);
+    assert_eq!(listed["count"].as_u64().unwrap(), listed["paths"].as_array().unwrap().len() as u64);
     assert_eq!(path["points"], json!([[10.0, 10.0], [110.0, 10.0], [110.0, 60.0]]));
     assert_eq!(path["color"], "#ff0000");
     assert!((path["strokeWidth"].as_f64().unwrap() - 3.0).abs() < 1e-6);

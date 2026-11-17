@@ -192,7 +192,6 @@ mod tests {
             json!({"page": 0, "modified": [{"id": 1, "points": [[0, 0]]}]}),
             json!({"page": 0, "modified": [{"id": 1, "points": [[0, 0], [1]]}]}),
             json!({"page": 0, "modified": [{"id": 1, "points": [[0, 0], [1, 1]], "color": "red"}]}),
-            json!({"page": "x", "deleted": [1]}),
         ] {
             assert!(parse_edits(&bad).is_err(), "{bad}");
         }

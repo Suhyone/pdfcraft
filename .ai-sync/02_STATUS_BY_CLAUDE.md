@@ -41,3 +41,11 @@
 - get_pdf.php / save_pdf.php: strict id check (400 invalid id); double-extension names flattened; pdf_store/.htaccess auto-created.
 - bridge.js: postMessage `company-pdf:trigger-save` (same origin), drag-drop hint in guide, mobile CSS. company_demo.php: iframe focus, Ctrl/Cmd+S forwarding, mobile CSS.
 - Tested on PHP built-in server: ids, double ext, parent Ctrl+S saved file (200 -> 504 bytes), 375px no horizontal overflow. Not tested: Apache .htaccess deny, other browsers.
+
+## Region Vector Editor (2026-11-17)
+- Step 1-2: crates/edit/src/vectors.rs (scan, update), Edit::EditVectors in engine (one undo step, label "Edit vector path(s)").
+- Step 3: automation tools vector_list / vector_edit (names use underscores: MCP name rule), parity entry edit.vector-lines.
+- Step 4: QuickTool::VectorEdit, command edit.vectors (Edit menu), Owner::VectorNode, tools/vector_ui.rs (marquee, drag points, Shift snap, Delete/Escape).
+- JS: window.pdfcraft.extractVectorsInRect(page,x,y,w,h) and applyVectorEdits(page,deleted,modified) with ?control (control methods vector.extract / vector.apply).
+- Tested on a real 5-page piping drawing PDF (read only, in memory): 500+ paths on page 1 in ~95 ms, delete of 3 paths 15 -> 12 in region.
+- Not verified: dist-pdf-tool/ still has the OLD wasm; rebuild/copy needed before upload.

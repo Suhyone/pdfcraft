@@ -60,7 +60,7 @@ fn only(edits: VectorEdits) -> VectorEdits {
 }
 
 #[test]
-fn reads_paths_under_their_matrix_with_width_and_colour() {
+fn vector_reads_paths_under_their_matrix_with_width_and_colour() {
     let doc = one_page(b"1 0 0 RG 3 w q 2 0 0 2 10 10 cm 0 0 m 10 0 l S Q 0 0 0 RG 300 300 m 400 300 l S");
     let all = vector_paths_in_region(&doc, 0, ALL).unwrap();
     assert_eq!(all.len(), 2);
@@ -76,7 +76,7 @@ fn reads_paths_under_their_matrix_with_width_and_colour() {
 }
 
 #[test]
-fn a_rectangle_is_four_corners_and_a_close() {
+fn vector_a_rectangle_is_four_corners_and_a_close() {
     let doc = one_page(b"10 20 30 40 re f");
     let p = vector_paths_in_region(&doc, 0, ALL).unwrap();
     assert_eq!(p[0].segments.len(), 5);
@@ -86,7 +86,7 @@ fn a_rectangle_is_four_corners_and_a_close() {
 }
 
 #[test]
-fn clipping_and_matrix_changes_inside_a_path_are_not_offered() {
+fn vector_clipping_and_matrix_changes_inside_a_path_are_not_offered() {
     let doc = one_page(b"0 0 10 10 re W n 0 0 m 5 5 l 2 0 0 2 0 0 cm 9 9 l S 20 20 m 30 30 l S");
     let p = vector_paths_in_region(&doc, 0, ALL).unwrap();
     assert_eq!(p.len(), 1);
@@ -94,7 +94,7 @@ fn clipping_and_matrix_changes_inside_a_path_are_not_offered() {
 }
 
 #[test]
-fn at_most_500_paths_come_back() {
+fn vector_at_most_500_paths_come_back() {
     let mut c = String::new();
     for i in 0..600 {
         c.push_str(&format!("{i} 0 m {i} 5 l S "));
@@ -104,7 +104,7 @@ fn at_most_500_paths_come_back() {
 }
 
 #[test]
-fn deleting_cuts_the_operators_out_and_draws_nothing_over_them() {
+fn vector_deleting_cuts_the_operators_out_and_draws_nothing_over_them() {
     let mut doc = one_page(b"q 1 0 0 1 5 5 cm 0 0 m 10 10 l S Q 100 100 m 200 200 l S");
     update_vector_paths(&mut doc, 0, &VectorEdits { deleted: vec![0], ..Default::default() }).unwrap();
     let text = content_text(&doc);
@@ -117,7 +117,7 @@ fn deleting_cuts_the_operators_out_and_draws_nothing_over_them() {
 }
 
 #[test]
-fn reshaping_is_written_back_through_the_inverse_matrix() {
+fn vector_reshaping_is_written_back_through_the_inverse_matrix() {
     let mut doc = one_page(b"q 2 0 0 2 10 10 cm 0 0 m 10 0 l S Q");
     let patch = VectorPatch { id: 0, segments: line([10.0, 10.0], [50.0, 90.0]), stroke_width: Some(4.0), color: Some([0.0, 0.0, 1.0]) };
     update_vector_paths(&mut doc, 0, &VectorEdits { patches: vec![patch], ..Default::default() }).unwrap();
@@ -129,7 +129,7 @@ fn reshaping_is_written_back_through_the_inverse_matrix() {
 }
 
 #[test]
-fn a_new_path_is_added_after_everything_even_when_the_page_ends_scaled() {
+fn vector_a_new_path_is_added_after_everything_even_when_the_page_ends_scaled() {
     let mut doc = one_page(b"q 0.5 0 0 0.5 0 0 cm 0 0 m 10 10 l S");
     let new = NewVectorPath { segments: line([100.0, 100.0], [200.0, 100.0]), stroke_width: 2.0, color: [0.0, 1.0, 0.0] };
     update_vector_paths(&mut doc, 0, &VectorEdits { added: vec![new], ..Default::default() }).unwrap();
@@ -141,7 +141,7 @@ fn a_new_path_is_added_after_everything_even_when_the_page_ends_scaled() {
 }
 
 #[test]
-fn refused_edits_change_nothing() {
+fn vector_refused_edits_change_nothing() {
     let mut doc = one_page(b"0 0 m 10 10 l S");
     let before = content_text(&doc);
     let nan = VectorPatch { id: 0, segments: line([f64::NAN, 0.0], [1.0, 1.0]), stroke_width: None, color: None };

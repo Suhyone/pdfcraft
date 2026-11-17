@@ -10460,3 +10460,15 @@ commands = []
 tools = []
 evidence = []
 notes = ""
+
+[[feature]]
+id = "edit.vector-lines"
+title = "Edit vector lines in a region"
+area = "C"
+tier = "P2"
+milestone = "M11"
+status = "partial"
+commands = ["edit.vectors"]
+tools = ["vector_list", "vector_edit"]
+evidence = ["crates/edit/tests/vector_edit.rs::vector_deleting_cuts_the_operators_out_and_draws_nothing_over_them", "crates/engine/src/tests.rs::vector_edits_are_one_undo_step", "crates/automation/tests/it/automation.rs::vector_paths_are_listed_and_edited_through_tools", "crates/ui-egui/tests/it/vector_edit.rs::a_rectangle_picks_up_line_art_and_a_dragged_point_is_one_undo_step", "crates/ui-egui/tests/it/vector_edit.rs::delete_removes_the_selected_path_and_escape_puts_the_rest_away"]
+notes = "Edit ▸ Edit vector lines: drag a rectangle to pick up the painted paths (lines, curves, rectangles; at most 500) inside it, drag their points and curve handles (Shift snaps to 0°/45°/90°, points snap to near points), click a path and press Delete to remove it. A drag or a delete is one undo step; a deleted path's operators are cut out of the page content, nothing is drawn over it. Headless: vector_list and vector_edit, and window.pdfcraft.extractVectorsInRect / applyVectorEdits with ?control. Not offered: paths that set a clip or change the matrix while being built, paths in Form XObjects or patterns, and text. Reshaping a curve through the headless tools replaces it with straight segments. Not observed against Acrobat."

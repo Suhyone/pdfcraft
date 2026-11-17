@@ -43,6 +43,19 @@ pub(crate) enum Owner {
     Added { index: usize, corner: Option<(bool, bool)> },
     /// Enhance ▸ Camera image: a corner of the quadrilateral (0 left top, then clockwise).
     CameraCorner { corner: usize },
+    /// Edit vector lines: a point of a picked-up path, by the path's index among the picked-up
+    /// ones, the segment's index in the path, and which point of the segment.
+    VectorNode { path: usize, seg: usize, handle: VectorHandle },
+}
+
+/// Which point of a path segment a hit is on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum VectorHandle {
+    /// Where the segment ends (the point of a move or a line).
+    Endpoint,
+    /// A curve's first and second control point.
+    Ctrl1,
+    Ctrl2,
 }
 
 /// The part of a picture a hit is on.

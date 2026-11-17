@@ -113,6 +113,7 @@ impl PdfCraftApp {
                     Err(e) => self.notify_fmt("Couldn't take the snapshot: {e}", &[("e", &e.to_string())]),
                 }
             }
+            QuickTool::VectorEdit => self.finish_vector_region(index, done),
             _ => {}
         }
     }

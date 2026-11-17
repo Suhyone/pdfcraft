@@ -750,6 +750,8 @@ pub struct DocView {
     pub crop_drag: crate::crop::CropDrag,
     /// Enhance ▸ Camera image: the quadrilateral being placed.
     pub camera: Option<crate::camera_ui::CameraQuad>,
+    /// Edit vector lines: the line art picked up on a page.
+    pub vector_edit: Option<crate::vector_ui::VectorEditState>,
     /// Enhance ▸ Camera image: the page just enhanced, while the bar offers rotate, crop and
     /// organize.
     pub camera_done: Option<crate::camera_ui::CameraDone>,
@@ -1011,6 +1013,9 @@ impl DocView {
     pub(crate) fn cancel_pointer_gestures(&mut self) {
         self.marquee = None;
         self.marquee_done = None;
+        if let Some(v) = self.vector_edit.as_mut() {
+            v.grab = None;
+        }
         self.comments.gesture = None;
         self.links.drag = None;
         self.sign.drag = None;
@@ -1189,6 +1194,7 @@ impl DocView {
             marks_waiting: None,
             crop_drag: None,
             camera: None,
+            vector_edit: None,
             camera_done: None,
             sign: Default::default(),
             org_drag: None,
@@ -2968,6 +2974,14 @@ fn finish_sign_requests(app: &mut PdfCraftApp, index: usize, mut tool: QuickTool
             v.area_pick = None;
         }
     }
+    // The line art picked up belongs to the vector tool, and follows the document through edits.
+    if tool == QuickTool::VectorEdit {
+        app.refresh_vectors(index);
+    } else {
+        for v in &mut app.views {
+            v.vector_edit = None;
+        }
+    }
     if let Some(choice) = app.views[index].area_choice.take()
         && let Some((page, area)) = app.views[index].area_pick
     {
@@ -3154,7 +3168,8 @@ fn tool_selects_text(tool: QuickTool, preparing: bool) -> bool {
         | QuickTool::Link
         | QuickTool::SignArea { .. }
         | QuickTool::MarqueeZoom
-        | QuickTool::Snapshot => false,
+        | QuickTool::Snapshot
+        | QuickTool::VectorEdit => false,
     }
 }
 

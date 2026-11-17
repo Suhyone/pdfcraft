@@ -152,6 +152,7 @@ const EDIT: &[&str] = &[
     SEP,
     "edit.column_select",
     "edit.snapshot",
+    "edit.vectors",
     SEP,
     "edit.attach",
     "form.clear",

@@ -302,6 +302,13 @@ impl DocView {
         self.glyph_screen_rect(page, glyph).map(|r| r.center())
     }
 
+    /// Where the point (`x`, `y`) of `page` in view space (points from the top left, as the page
+    /// is shown) is on screen, when the page is on screen.
+    pub fn view_point_screen_pos(&self, page: usize, x: f32, y: f32) -> Option<Pos2> {
+        let (_, xf) = self.screen_xforms.iter().find(|(p, _)| *p == page)?;
+        Some(xf.view_rect([x, y, x, y]).center())
+    }
+
     /// The screen rectangle of glyph `glyph` on `page`, when the page is on screen.
     pub fn glyph_screen_rect(&self, page: usize, glyph: usize) -> Option<Rect> {
         let (_, xf) = self.screen_xforms.iter().find(|(p, _)| *p == page)?;
