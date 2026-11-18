@@ -737,6 +737,8 @@ impl Automation {
             "link_run_javascript" => self.link_run_javascript(&a)?,
             "links_from_urls" => self.links_from_urls(&a)?,
             "links_remove" => self.links_remove(&a)?,
+            "vector_list" => self.vector_list(&a)?,
+            "vector_edit" => self.vector_edit(&a)?,
             "object_list" => self.object_list(&a)?,
             "object_move" => self.object_move(&a)?,
             "object_copy" => self.object_copy(&a)?,

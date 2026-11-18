@@ -750,6 +750,8 @@ pub struct DocView {
     pub crop_drag: crate::crop::CropDrag,
     /// Enhance ▸ Camera image: the quadrilateral being placed.
     pub camera: Option<crate::camera_ui::CameraQuad>,
+    /// Edit vector lines: the line art picked up on a page.
+    pub vector_edit: Option<crate::vector_ui::VectorEditState>,
     /// Enhance ▸ Camera image: the page just enhanced, while the bar offers rotate, crop and
     /// organize.
     pub camera_done: Option<crate::camera_ui::CameraDone>,
@@ -826,6 +828,9 @@ pub struct DocView {
     /// arrives. The stale raster stays on screen stretched meanwhile.
     last_scale: f32,
     sharp_hold_until: f64,
+    /// The same hold for every other page: short (150 ms), so a wheel or pinch zoom scales the
+    /// bitmap on screen and the sharp raster is asked for once the zoom settles.
+    zoom_hold_until: f64,
     /// Pan-settle debounce for tiled pages: the scroll offset last frame, and the egui time
     /// until which sharp tile re-renders are held back. Each tile costs a full page
     /// interpret, so a drag would otherwise queue a storm of them (one per frame) while the
@@ -1011,6 +1016,9 @@ impl DocView {
     pub(crate) fn cancel_pointer_gestures(&mut self) {
         self.marquee = None;
         self.marquee_done = None;
+        if let Some(v) = self.vector_edit.as_mut() {
+            v.grab = None;
+        }
         self.comments.gesture = None;
         self.links.drag = None;
         self.sign.drag = None;
@@ -1164,6 +1172,7 @@ impl DocView {
             grid_pages: HashMap::new(),
             last_scale: 0.0,
             sharp_hold_until: 0.0,
+            zoom_hold_until: 0.0,
             last_scroll: Vec2::ZERO,
             scroll_dir: 0,
             scroll_content: Vec2::ZERO,
@@ -1189,6 +1198,7 @@ impl DocView {
             marks_waiting: None,
             crop_drag: None,
             camera: None,
+            vector_edit: None,
             camera_done: None,
             sign: Default::default(),
             org_drag: None,
@@ -2502,6 +2512,7 @@ struct RenderPlan<'a> {
     tag: u64,
     scale: f32,
     sharp_held: bool,
+    zoom_held: bool,
     pan_held: bool,
     hand: bool,
 }
@@ -2511,7 +2522,7 @@ struct RenderPlan<'a> {
 /// pages and old zooms, and asks for the text layers.
 fn plan_renders(ui: &egui::Ui, view: &mut DocView, info: &DocInfo, renders: PageRenders, plan: &RenderPlan<'_>) {
     let (mut wanted, visible_now) = renders;
-    let RenderPlan { visible_pages, tag, scale, sharp_held, pan_held, hand } = *plan;
+    let RenderPlan { visible_pages, tag, scale, sharp_held, zoom_held, pan_held, hand } = *plan;
     // Single-page and two-page views draw only the current row, so the next one was first asked
     // for on the turn and showed blank paper until it rendered. Prefetch the rows either side,
     // as continuous scrolling does for the pages just off screen.
@@ -2587,12 +2598,13 @@ fn plan_renders(ui: &egui::Ui, view: &mut DocView, info: &DocInfo, renders: Page
     // scale would cancel the running full-page interpret and restart it from scratch, and
     // each pan frame would queue a storm of full-page tile interprets.
     // Pages with nothing on screen yet still queue, so panning to a fresh page draws it.
-    if sharp_held || pan_held {
+    if sharp_held || zoom_held || pan_held {
         let main_tag = tag;
         queue.retain(|req| {
-            // Fast pages render straight through: the hold only protects heavy pages
-            // whose full-page interpret costs seconds.
-            if !view.slow_pages.contains(&req.page) {
+            // Heavy pages are held through the whole zoom and every pan. The others only
+            // through a zoom (until it settles for 150 ms): a pan renders straight through.
+            let held = if view.slow_pages.contains(&req.page) { sharp_held || pan_held } else { zoom_held };
+            if !held {
                 return true;
             }
             if req.tile.is_some() {
@@ -2968,6 +2980,14 @@ fn finish_sign_requests(app: &mut PdfCraftApp, index: usize, mut tool: QuickTool
             v.area_pick = None;
         }
     }
+    // The line art picked up belongs to the vector tool, and follows the document through edits.
+    if tool == QuickTool::VectorEdit {
+        app.refresh_vectors(index);
+    } else {
+        for v in &mut app.views {
+            v.vector_edit = None;
+        }
+    }
     if let Some(choice) = app.views[index].area_choice.take()
         && let Some((page, area)) = app.views[index].area_pick
     {
@@ -3154,7 +3174,8 @@ fn tool_selects_text(tool: QuickTool, preparing: bool) -> bool {
         | QuickTool::Link
         | QuickTool::SignArea { .. }
         | QuickTool::MarqueeZoom
-        | QuickTool::Snapshot => false,
+        | QuickTool::Snapshot
+        | QuickTool::VectorEdit => false,
     }
 }
 
@@ -3162,15 +3183,21 @@ fn tool_selects_text(tool: QuickTool, preparing: bool) -> bool {
 /// in-flight full-page interpret and restart it, so on a heavy page (a CAD plot with ~1000 images
 /// renders for seconds) the sharp raster never arrives and the view looks stuck on a soft image.
 /// The stale raster stays stretched meanwhile; the sharp request goes out once the zoom settles.
-fn hold_sharp_renders(ui: &egui::Ui, view: &mut DocView, scale: f32) -> bool {
+/// Returns (heavy pages held, every page held): 350 ms and 150 ms after the scale last changed.
+fn hold_sharp_renders(ui: &egui::Ui, view: &mut DocView, scale: f32) -> (bool, bool) {
     let now_scale = ui.input(|i| i.time);
     if (scale - view.last_scale).abs() > f32::EPSILON {
         view.last_scale = scale;
         view.sharp_hold_until = now_scale + 0.35;
+        view.zoom_hold_until = now_scale + ZOOM_SETTLE;
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(160));
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(380));
     }
-    now_scale < view.sharp_hold_until
+    (now_scale < view.sharp_hold_until, now_scale < view.zoom_hold_until)
 }
+
+/// Seconds the zoom must stand still before a sharp raster is asked for.
+const ZOOM_SETTLE: f64 = 0.15;
 
 /// A destination's position (bookmarks, links) refines `goto`: its point at the window's top-left,
 /// or the centre of a /FitR rectangle at the window's centre.
@@ -3360,7 +3387,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     // plot with ~1000 images renders for seconds) the sharp raster never arrives and the
     // view looks stuck on a soft image. The stale raster stays stretched meanwhile; the
     // sharp request goes out once the zoom settles.
-    let sharp_held = hold_sharp_renders(ui, view, scale);
+    let (sharp_held, zoom_held) = hold_sharp_renders(ui, view, scale);
     view.current_scale_tag = tag;
     let hand = app.quick_tool == QuickTool::Hand;
     let (tool, placing) = page_tool(view, app.quick_tool);
@@ -3545,7 +3572,7 @@ pub fn document_area(app: &mut PdfCraftApp, index: usize, ui: &mut egui::Ui) {
     // the workers cannot cancel mid-operator. Fresh tiles go out once the pan settles;
     // pages with nothing on screen yet still queue.
     let pan_held = track_scroll(ui, view, &out, glide);
-    plan_renders(ui, view, info, out.inner, &RenderPlan { visible_pages: &visible_pages, tag, scale, sharp_held, pan_held, hand });
+    plan_renders(ui, view, info, out.inner, &RenderPlan { visible_pages: &visible_pages, tag, scale, sharp_held, zoom_held, pan_held, hand });
 
     let text_done = frame_overlays(ui, view, &env, primary_down, hover_text);
     if let Some(why) = view.objects.notice.take() {

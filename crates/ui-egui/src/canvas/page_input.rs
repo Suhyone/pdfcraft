@@ -409,8 +409,11 @@ fn tool_input(
     if matches!(tool, QuickTool::SignArea { .. }) {
         crate::sign_ui::page_input(cx, free, view);
     }
-    if matches!(tool, QuickTool::MarqueeZoom | QuickTool::Snapshot) {
+    if matches!(tool, QuickTool::MarqueeZoom | QuickTool::Snapshot | QuickTool::VectorEdit) {
         crate::zoom_snap::page_input(ui, resp, &xf, ptr, i, free, view);
+    }
+    if tool == QuickTool::VectorEdit {
+        crate::vector_ui::page_input(resp, ptr, crate::vector_ui::PageRef { xf: &xf, info, page: i }, view, can_modify, press);
     }
     if tool == QuickTool::EnhanceCamera {
         crate::camera_ui::page_input(resp, &xf, ptr, i, view, can_modify, press);
@@ -647,11 +650,12 @@ impl PageHits<'_> {
         let picks_up = matches!(tool, QuickTool::Select | QuickTool::AddText | QuickTool::EditText);
         let added = (editing_content && can_modify && picks_up).then(|| crate::content_ui::hit(xf, info, page, added, view, p)).flatten();
         let corner = (!context && tool == QuickTool::EnhanceCamera && can_modify).then(|| crate::camera_ui::hit(xf, page, view, p)).flatten();
+        let node = (!context && tool == QuickTool::VectorEdit && can_modify).then(|| crate::vector_ui::hit(xf, info, page, view, p)).flatten();
         let link = crate::link_ui::hit(xf, info, page, doc_links, tool, p);
         let text_link = (text_links && link.is_none()).then(|| text_link_hit(view, info, xf, page, p)).flatten();
         let on_link = link.is_some() || text_link.is_some();
         let comment = if context { comments::context_hit(pcx, p) } else { comments::hit(pcx, view, p, on_link) };
-        [link, text_link, comment, pictures, paragraphs, added, objects, grips, corner, fields].into_iter().flatten().collect()
+        [link, text_link, comment, pictures, paragraphs, added, objects, grips, corner, node, fields].into_iter().flatten().collect()
     }
 }
 
@@ -1012,6 +1016,9 @@ pub(super) fn page_overlays(ui: &mut egui::Ui, view: &mut DocView, frame: &mut P
     }
     if tool == QuickTool::EnhanceCamera {
         crate::camera_ui::paint(painter, &xf, i, view);
+    }
+    if tool == QuickTool::VectorEdit {
+        crate::vector_ui::paint(painter, &xf, info, i, view);
     }
     if tool == QuickTool::Link {
         crate::link_ui::paint(painter, &xf, i, info, doc_links, view, pointer);

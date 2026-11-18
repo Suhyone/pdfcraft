@@ -15461,3 +15461,25 @@ fn inline_conversions_refuse_office_documents_without_running_libreoffice() {
     assert_eq!(s.convert_to_pdf_inline("notes.txt", &Arc::new(b"hello".to_vec())).unwrap().0, SourceKind::Text);
     assert!(s.as_pdf_inline("scan.jpg", &Arc::new(jpeg_bytes())).unwrap().starts_with(b"%PDF-"));
 }
+
+#[test]
+fn vector_edits_are_one_undo_step() {
+    let (mut s, id) = session_with(1);
+    let region = [-1e5, -1e5, 1e5, 1e5];
+    let before = s.get(id).unwrap().vector_paths_in_region(0, region).unwrap().len();
+    let added = crate::NewVectorPath {
+        segments: vec![crate::PathSeg::MoveTo([10.0, 10.0]), crate::PathSeg::LineTo([90.0, 60.0])],
+        stroke_width: 2.0,
+        color: [1.0, 0.0, 0.0],
+    };
+    s.apply(id, Edit::EditVectors { page: 0, edits: crate::VectorEdits { added: vec![added], ..Default::default() } }).unwrap();
+    let doc = s.get(id).unwrap();
+    assert!(doc.dirty);
+    assert_eq!(doc.can_undo(), Some("Edit vector path"));
+    let paths = doc.vector_paths_in_region(0, region).unwrap();
+    assert_eq!(paths.len(), before + 1);
+    let new_id = paths.last().map(|p| p.id).unwrap();
+    s.apply(id, Edit::EditVectors { page: 0, edits: crate::VectorEdits { deleted: vec![new_id], ..Default::default() } }).unwrap();
+    assert_eq!(s.get(id).unwrap().vector_paths_in_region(0, region).unwrap().len(), before);
+    assert!(s.apply(id, Edit::EditVectors { page: 0, edits: crate::VectorEdits { deleted: vec![9_999], ..Default::default() } }).is_err());
+}

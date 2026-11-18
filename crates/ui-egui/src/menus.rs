@@ -152,6 +152,7 @@ const EDIT: &[&str] = &[
     SEP,
     "edit.column_select",
     "edit.snapshot",
+    "edit.vectors",
     SEP,
     "edit.attach",
     "form.clear",
@@ -227,8 +228,7 @@ const SIGN: &[&str] = &[
     "sign.panel",
 ];
 const WINDOW: &[&str] = &["view.next_tab", "view.previous_tab"];
-const HELP: &[&str] =
-    &["help.shortcuts", SEP, "help.app_page", "help.github", "help.website", "help.discord", SEP, "help.check_updates", SEP, "help.about"];
+const HELP: &[&str] = &["help.shortcuts", SEP, "help.github", SEP, "help.check_updates", SEP, "help.about"];
 
 /// A registry shortcut as a craft-keymap chord: `command` is ⌘ (Ctrl elsewhere) and `mac_ctrl`
 /// the Control key on macOS. `None` for a key craft-keymap doesn't name.

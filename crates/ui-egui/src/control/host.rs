@@ -55,6 +55,22 @@ impl Host for crate::PdfCraftApp {
         self.request_quit(ctx)
     }
 
+    fn vector_extract(&mut self, page: usize, region: [f64; 4]) -> Reply {
+        let (_, id) = self.active_ids().ok_or("vector.extract needs an open document")?;
+        let doc = self.session.get(id).ok_or("vector.extract needs an open document")?;
+        pdfcraft_engine::vector_json::extract_reply(doc.vector_paths_in_region(page, region))
+    }
+
+    fn vector_apply(&mut self, page: usize, edits: pdfcraft_engine::VectorEdits) -> Reply {
+        self.active_ids().ok_or("vector.apply needs an open document")?;
+        let changed = edits.len();
+        if self.apply_edit(pdfcraft_engine::Edit::EditVectors { page, edits }) {
+            Ok(json!({ "applied": changed, "page": page }))
+        } else {
+            Err(self.toast.as_ref().map(|t| t.0.clone()).unwrap_or_else(|| "the vector edit was refused".to_string()))
+        }
+    }
+
     fn state(&self) -> Value {
         let active = self.active.and_then(|i| self.views.get(i));
         let docs: Vec<Value> = self
@@ -135,6 +151,7 @@ impl Host for crate::PdfCraftApp {
                 crate::QuickTool::MarqueeZoom => "marquee-zoom".to_string(),
                 crate::QuickTool::Snapshot => "snapshot".to_string(),
                 crate::QuickTool::ColumnSelect => "column-select".to_string(),
+                crate::QuickTool::VectorEdit => "vector-edit".to_string(),
                 crate::QuickTool::Stamp(k) => format!("stamp-{}", k.name().trim_start_matches("PC").to_ascii_lowercase()),
                 crate::QuickTool::CustomStamp(i) => format!("custom-stamp-{i}"),
                 crate::QuickTool::Fill(f) => format!("fill-{}", f.command().trim_start_matches("sign.fill.")),

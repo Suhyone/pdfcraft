@@ -56,6 +56,9 @@ impl PdfCraftApp {
             }
             self.tool_keys(i, ctx);
             let keys = self.page_keys;
+            if self.quick_tool == QuickTool::VectorEdit && self.session.get(self.views[i].id).is_some_and(|d| d.allows_modification()) {
+                crate::vector_ui::keys(ctx, keys, &mut self.views[i]);
+            }
             if self.quick_tool == QuickTool::EditText
                 && let Some(doc) = self.session.get(self.views[i].id).filter(|d| d.allows_modification())
             {

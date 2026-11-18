@@ -98,6 +98,7 @@ mod theme_button;
 mod trust_signer;
 mod ui;
 mod updates;
+mod vector_edit;
 mod view;
 mod viewer;
 mod viewer_prefs;

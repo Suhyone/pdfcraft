@@ -231,6 +231,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     c("comment.paste", "Paste comments", EDIT, None, Annotate, "clipboard-paste"),
     c("edit.column_select", "Column select", EDIT, None, Document, "text-select"),
     c("edit.snapshot", "Take a snapshot", EDIT, None, Copying, "camera"),
+    c("edit.vectors", "Edit vector lines", EDIT, None, Modification, "spline"),
     c("view.full_screen", "Full screen mode", VIEW, Some(Shortcut::cmd("L")), Document, "maximize"),
     c("view.read_mode", "Read mode", VIEW, Some(Shortcut { command: true, shift: false, mac_ctrl: true, key: "H" }), Document, "book-open"),
     // Split view (Acrobat's Window ▸ Split): the current document in two panes, or back to one;
@@ -427,10 +428,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     c("prepress.hairlines", "Fix hairlines…", None, None, Modification, "minus"),
     c("page.properties", "Page properties…", PAGES, None, Modification, "info"),
     c("help.shortcuts", "Keyboard shortcuts", HELP, None, Nothing, "circle-help"),
-    c("help.discord", "Join the ArtCraft Discord", HELP, None, Nothing, "messages-square"),
-    c("help.app_page", "PdfCraft web page", HELP, None, Nothing, "globe"),
     c("help.github", "PdfCraft on GitHub", HELP, None, Nothing, "code-xml"),
-    c("help.website", "ArtCraft website", HELP, None, Nothing, "external-link"),
     c("help.check_updates", "Check for updates…", HELP, None, Nothing, "cloud"),
     c("help.about", "About PdfCraft", HELP, None, Nothing, "info"),
 ];

@@ -234,6 +234,18 @@ pub fn tools() -> Vec<ToolDef> {
                     "pan": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "Moves the target [right, up] in model radii, so the model moves the other way (default [0, 0]); each held within 1000." }
                 }, "additionalProperties": false }
             }), &["doc", "page"])),
+        t("vector_list", "List line-art paths in a region", "List the painted vector paths (lines, curves, rectangles) of a page that touch rect, as [x0, y0, x1, y1] in PDF user space (points, origin bottom-left), at most 100 (more is refused with TOO_MANY_OBJECTS: use a smaller rect), in drawing order; a leader line leaving the rect is followed to its arrowhead and the extra pieces come after. connectors lists the callouts found (leader, heads, frame ids). Each has an id, points (curves are sampled), strokeWidth, color (#rrggbb), closed, curved and its paint operator. Ids count the painted paths of the page, so list again after any edit. Paths that set a clip or change the matrix while being built are not offered.")
+            .ro().with(schema(json!({"doc":doc(),"page":{"type":"integer","minimum":1},
+                "rect":{"type":"array","items":{"type":"number"},"minItems":4,"maxItems":4,"description":"[x0, y0, x1, y1] in PDF user space."}}), &["doc","page","rect"])),
+        t("vector_edit", "Edit line-art paths", "Delete, reshape and add vector paths on a page as one undo step (ids from vector_list). Deleted paths' operators are cut out of the page content: nothing is drawn over them. A modified entry with an id replaces that path with the polyline points (curves become straight segments) and may restyle it with strokeWidth (points) and color (#rrggbb or [r,g,b] 0..1); one without an id adds a new stroked path after everything else. A stale or unknown id refuses the whole edit and changes nothing.")
+            .with(schema(json!({"doc":doc(),"page":{"type":"integer","minimum":1},
+                "deleted":{"type":"array","items":{"type":"integer","minimum":0},"maxItems":10000,"uniqueItems":true},
+                "modified":{"type":"array","maxItems":10000,"items":{"type":"object","properties":{
+                    "id":{"type":"integer","minimum":0,"description":"Path to replace; omit to add a new path."},
+                    "points":{"type":"array","minItems":2,"maxItems":20000,"items":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":2}},
+                    "strokeWidth":{"type":"number","minimum":0},
+                    "color":{"type":["string","array"],"description":"#rrggbb, or [r, g, b] in 0..1."},
+                    "closed":{"type":"boolean"}},"required":["points"],"additionalProperties":false}}}), &["doc","page"])),
         t("object_list", "List editable objects", "List existing paragraphs, Image/Form artwork and added content once, with source kind/index references, displayed rectangles and document generation. Indexes change when content changes; use generation in object_move to reject stale references.")
             .ro().with(schema(json!({"doc":doc(),"page":{"type":"integer","minimum":1}}), &["doc","page"])),
         t("object_move", "Move objects together", "Atomically translate 1–1000 mixed references from object_list (or with all: true every object on the page) by [dx, dy] in displayed points (right/down). Preserves glyph codes, fonts, image data and relative spacing; success is one undo step. Text used as a clipping path and vertical text are refused. A bad/stale reference refuses the entire move.")

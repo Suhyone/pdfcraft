@@ -316,6 +316,13 @@ impl Document {
         pdfcraft_edit::editable_objects(&editor.cos, page).map_err(|e| e.to_string())
     }
 
+    /// The painted paths of `page` (0-based) that touch `region` (`[x0, y0, x1, y1]`, page user
+    /// space), at most `pdfcraft_edit::vectors::MAX_PATHS`.
+    pub fn vector_paths_in_region(&self, page: usize, region: [f64; 4]) -> Result<Vec<pdfcraft_edit::VectorPath>, String> {
+        let editor = self.editor.as_ref().ok_or("the document can't be read")?;
+        pdfcraft_edit::vector_paths_in_region(&editor.cos, page, region).map_err(|e| e.to_string())
+    }
+
     /// Displayed top-left-origin motion to a user-space vector. Use the linear map only,
     /// so even a large crop-box origin cannot erase a small drag by cancellation.
     pub fn object_move_offset(&self, page: usize, delta: [f64; 2]) -> Result<[f64; 2], String> {

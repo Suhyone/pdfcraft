@@ -10460,3 +10460,15 @@ commands = []
 tools = []
 evidence = []
 notes = ""
+
+[[feature]]
+id = "edit.vector-lines"
+title = "Edit vector lines in a region"
+area = "C"
+tier = "P2"
+milestone = "M11"
+status = "partial"
+commands = ["edit.vectors"]
+tools = ["vector_list", "vector_edit"]
+evidence = ["crates/edit/tests/vector_edit.rs::vector_deleting_cuts_the_operators_out_and_draws_nothing_over_them", "crates/engine/src/tests.rs::vector_edits_are_one_undo_step", "crates/automation/tests/it/automation.rs::vector_paths_are_listed_and_edited_through_tools", "crates/ui-egui/tests/it/vector_edit.rs::a_rectangle_picks_up_line_art_and_a_dragged_point_is_one_undo_step", "crates/ui-egui/tests/it/vector_edit.rs::delete_removes_the_selected_path_and_escape_puts_the_rest_away", "crates/edit/tests/vector_edit.rs::vector_more_than_100_paths_in_a_region_is_refused_with_a_count", "crates/edit/tests/vector_edit.rs::vector_a_leader_leaving_the_region_brings_its_arrowhead_along", "crates/ui-egui/tests/it/vector_edit.rs::a_callout_is_picked_up_whole_and_its_frame_drags_the_leader_along", "crates/ui-egui/tests/it/vector_edit.rs::a_dragged_middle_makes_a_sharp_corner_that_stays_when_the_frame_moves_and_a_triple_click_straightens", "crates/ui-egui/tests/it/vector_edit.rs::more_than_100_lines_in_a_rectangle_are_refused_with_a_message"]
+notes = "Edit ▸ Edit vector lines: drag a rectangle to pick up the painted paths (lines, curves, rectangles; at most 100: more is refused with TOO_MANY_OBJECTS and a message) inside it, or click to pick up the lines under the pointer; a leader line that leaves the rectangle is followed to its arrowhead (a callout is picked up whole), the frame of a callout can be dragged (a straight leader re-aims its tail at the frame's nearest edge, a bent one keeps its bends), the middle handle of a selected leader makes a sharp corner, and a triple click on a bent leader straightens it, drag their points and curve handles (Shift snaps to 0°/45°/90°, points snap to near points), click a path and press Delete to remove it. A drag or a delete is one undo step; a deleted path's operators are cut out of the page content, nothing is drawn over it. Headless: vector_list and vector_edit, and window.pdfcraft.extractVectorsInRect / applyVectorEdits with ?control. Not offered: paths that set a clip or change the matrix while being built, paths in Form XObjects or patterns, and text. Reshaping a curve through the headless tools replaces it with straight segments. Not observed against Acrobat."

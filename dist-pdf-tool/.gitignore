@@ -1,0 +1,5 @@
+# Build output from `trunk build --release` (53 MB): rebuild instead of committing it.
+*.wasm
+pdfcraft-*.js
+index.html
+snippets/
