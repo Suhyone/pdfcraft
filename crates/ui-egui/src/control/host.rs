@@ -58,7 +58,7 @@ impl Host for crate::PdfCraftApp {
     fn vector_extract(&mut self, page: usize, region: [f64; 4]) -> Reply {
         let (_, id) = self.active_ids().ok_or("vector.extract needs an open document")?;
         let doc = self.session.get(id).ok_or("vector.extract needs an open document")?;
-        doc.vector_paths_in_region(page, region).map(|paths| pdfcraft_engine::vector_json::paths_json(&paths))
+        pdfcraft_engine::vector_json::extract_reply(doc.vector_paths_in_region(page, region))
     }
 
     fn vector_apply(&mut self, page: usize, edits: pdfcraft_engine::VectorEdits) -> Reply {

@@ -16,4 +16,5 @@ pub(super) mod replace_ui;
 pub(super) mod sign_ui;
 pub(super) mod stamps_ui;
 pub(super) mod tags_ui;
+pub(super) mod vector_connector;
 pub(super) mod vector_ui;

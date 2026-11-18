@@ -60,7 +60,36 @@ pub fn paths_json(paths: &[VectorPath]) -> Value {
             })
         })
         .collect();
-    json!({ "paths": list })
+    let callouts: Vec<Value> = pdfcraft_edit::connectors(paths)
+        .iter()
+        .filter_map(|c| {
+            let id = |i: usize| paths.get(i).map(|p| p.id);
+            Some(json!({
+                "leader": id(c.leader)?,
+                "heads": c.heads.iter().filter_map(|h| id(*h)).collect::<Vec<_>>(),
+                "frame": c.frame.and_then(id),
+                "tailFirst": c.tail_first,
+            }))
+        })
+        .collect();
+    json!({ "paths": list, "connectors": callouts })
+}
+
+/// The count in a `TOO_MANY_OBJECTS:N` error of the region read, if that is what `err` is.
+pub fn too_many(err: &str) -> Option<usize> {
+    err.strip_prefix("TOO_MANY_OBJECTS:")?.trim().parse().ok()
+}
+
+/// The reply of `vector.extract` for what the document answered: the paths, or for a region with
+/// more line art than one pick-up carries `{"error": "TOO_MANY_OBJECTS", "count": N}`.
+pub fn extract_reply(read: Result<Vec<VectorPath>, String>) -> Result<Value, String> {
+    match read {
+        Ok(paths) => Ok(paths_json(&paths)),
+        Err(e) => match too_many(&e) {
+            Some(count) => Ok(json!({ "error": "TOO_MANY_OBJECTS", "count": count })),
+            None => Err(e),
+        },
+    }
 }
 
 fn number(p: &Value, key: &str) -> Result<f64, String> {

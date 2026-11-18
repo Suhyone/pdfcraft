@@ -94,13 +94,27 @@ fn vector_clipping_and_matrix_changes_inside_a_path_are_not_offered() {
 }
 
 #[test]
-fn vector_at_most_500_paths_come_back() {
-    let mut c = String::new();
-    for i in 0..600 {
-        c.push_str(&format!("{i} 0 m {i} 5 l S "));
-    }
-    let doc = one_page(c.as_bytes());
-    assert_eq!(vector_paths_in_region(&doc, 0, ALL).unwrap().len(), 500);
+fn vector_more_than_100_paths_in_a_region_is_refused_with_a_count() {
+    let lines = |n: usize| (0..n).map(|i| format!("{i} 0 m {i} 5 l S ")).collect::<String>();
+    let doc = one_page(lines(101).as_bytes());
+    let err = vector_paths_in_region(&doc, 0, ALL).unwrap_err();
+    assert!(matches!(err, pdfcraft_edit::EditError::TooManyObjects(101)), "{err:?}");
+    assert_eq!(err.to_string(), "TOO_MANY_OBJECTS:101");
+    // A smaller region of the same page is fine, and exactly 100 are allowed.
+    assert_eq!(vector_paths_in_region(&doc, 0, [0.0, 0.0, 10.2, 10.0]).unwrap().len(), 11);
+    assert_eq!(vector_paths_in_region(&one_page(lines(100).as_bytes()), 0, ALL).unwrap().len(), 100);
+}
+
+#[test]
+fn vector_a_leader_leaving_the_region_brings_its_arrowhead_along() {
+    // A frame, a leader from its edge to far away, and a filled arrowhead at the far end.
+    let doc = one_page(b"10 10 60 30 re S 70 25 m 170 105 l S 170 105 m 160 103 l 166 95 l h f 400 400 m 450 450 l S");
+    let near_frame = vector_paths_in_region(&doc, 0, [0.0, 0.0, 80.0, 40.0]).unwrap();
+    let ids: Vec<usize> = near_frame.iter().map(|p| p.id).collect();
+    assert_eq!(ids, vec![0, 1, 2], "the frame, the leader and the arrowhead past the region, not the far line");
+    let c = pdfcraft_edit::connectors(&near_frame);
+    assert_eq!(c.len(), 1);
+    assert_eq!((c[0].leader, c[0].heads.clone(), c[0].frame, c[0].tail_first), (1, vec![2], Some(0), true));
 }
 
 #[test]

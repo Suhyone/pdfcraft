@@ -32,6 +32,9 @@ pub enum EditError {
     NoSuchPage(usize),
     #[error("{0}")]
     Invalid(String),
+    /// A region held more line art than one pick-up may carry; the number found when it stopped.
+    #[error("TOO_MANY_OBJECTS:{0}")]
+    TooManyObjects(usize),
     #[error("{0}")]
     Cos(#[from] pdfcraft_cos::CosError),
 }
@@ -68,9 +71,11 @@ pub use text::{
 pub mod printer_marks;
 pub use printer_marks::{PrinterMarks, add_printer_marks};
 mod colour;
+mod connectors;
 pub mod convert_colours;
 pub mod hairlines;
 pub mod vectors;
+pub use connectors::{Connector, connectors, edges_of, nearest_on_outline};
 pub use vectors::{NewVectorPath, PathSeg, VectorEdits, VectorPatch, VectorPath, update_vector_paths, vector_paths_in_region};
 mod page_streams;
 pub use convert_colours::{ColourTarget, ConvertColours, Converted as ColoursConverted, ImageRecolour, convert_colours};

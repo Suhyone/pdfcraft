@@ -458,14 +458,18 @@ impl Automation {
 }
 
 impl Automation {
-    /// The painted paths of a page that touch `rect` (page user space), at most 500, with
+    /// The painted paths of a page that touch `rect` (page user space), at most 100 (more is
+    /// refused: use a smaller rect), with
     /// the ids `vector_edit` takes. Ids count the painted paths of the page, so they change
     /// when content is edited: list again after an edit.
     pub(crate) fn vector_list(&self, a: &Args) -> Result<Value> {
         let page = self.page(a)?;
         let rect = a.get("rect").ok_or_else(|| Args::missing("rect"))?;
         let rect = pdfcraft_engine::vector_json::parse_rect(rect).map_err(ToolError::InvalidArgs)?;
-        let paths = self.doc(a)?.vector_paths_in_region(page, rect).map_err(failed)?;
+        let paths = self.doc(a)?.vector_paths_in_region(page, rect).map_err(|e| match pdfcraft_engine::vector_json::too_many(&e) {
+            Some(n) => failed(format!("TOO_MANY_OBJECTS: {n} paths in that rect, at most 100 can be read at once; use a smaller rect")),
+            None => failed(e),
+        })?;
         let mut out = pdfcraft_engine::vector_json::paths_json(&paths);
         out["page"] = json!(page + 1);
         out["count"] = json!(paths.len());

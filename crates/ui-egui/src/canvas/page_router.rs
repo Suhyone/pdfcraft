@@ -46,6 +46,9 @@ pub(crate) enum Owner {
     /// Edit vector lines: a point of a picked-up path, by the path's index among the picked-up
     /// ones, the segment's index in the path, and which point of the segment.
     VectorNode { path: usize, seg: usize, handle: VectorHandle },
+    /// The frame of a picked-up callout, by its index among the picked-up paths: dragging it
+    /// moves the frame and its leader line.
+    VectorBody { path: usize },
 }
 
 /// Which point of a path segment a hit is on.
@@ -56,6 +59,8 @@ pub(crate) enum VectorHandle {
     /// A curve's first and second control point.
     Ctrl1,
     Ctrl2,
+    /// The middle of a leader line's piece (the segment that ends here): dragging it makes a corner.
+    Mid,
 }
 
 /// The part of a picture a hit is on.

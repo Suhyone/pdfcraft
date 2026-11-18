@@ -19,8 +19,13 @@ use crate::EditError;
 use crate::page_streams::PageStreams;
 use crate::place::page_list;
 
-/// The most paths [`vector_paths_in_region`] returns.
-pub const MAX_PATHS: usize = 500;
+/// The most paths a region may hold: with more, [`vector_paths_in_region`] stops with
+/// [`EditError::TooManyObjects`].
+pub const MAX_PATHS: usize = 100;
+/// The most paths added beyond the region by following a leader line to its arrowhead.
+const MAX_TRACED: usize = 24;
+/// How many pieces long a leader may be followed.
+const TRACE_HOPS: usize = 3;
 /// The most segments a path may have to be offered for editing.
 pub const MAX_SEGMENTS: usize = 20_000;
 /// Nesting of `q` the scan accepts, as everywhere else.
@@ -396,11 +401,60 @@ fn valid_region(r: [f64; 4]) -> Option<[f64; 4]> {
 }
 
 /// The painted paths of page `page` (0-based) that touch `region` (`[x0, y0, x1, y1]` in page
-/// user space), at most [`MAX_PATHS`], in drawing order.
+/// user space), in drawing order. More than [`MAX_PATHS`] of them stop the read at once with
+/// [`EditError::TooManyObjects`]. A leader line that leaves the region is followed past its edge:
+/// its further pieces and its arrowhead are added after the region's own paths (at most 24 of
+/// them), so a callout is picked up whole.
 pub fn vector_paths_in_region(doc: &Document, page: usize, region: [f64; 4]) -> Result<Vec<VectorPath>, EditError> {
     let r = valid_region(region).ok_or_else(|| EditError::Invalid("the region is not a finite rectangle".into()))?;
     let touches = move |_: usize, b: [f64; 4]| b[0] <= r[2] && b[2] >= r[0] && b[1] <= r[3] && b[3] >= r[1];
-    Ok(scan(doc, page, MAX_PATHS, &touches)?.paths)
+    let mut found = scan(doc, page, MAX_PATHS + 1, &touches)?.paths;
+    if found.len() > MAX_PATHS {
+        return Err(EditError::TooManyObjects(found.len()));
+    }
+    trace_leaders(doc, page, &mut found)?;
+    Ok(found)
+}
+
+/// Follow the open ends of the picked-up leader lines past the region: the pieces of the line that
+/// go on, then the arrowhead where it ends.
+fn trace_leaders(doc: &Document, page: usize, found: &mut Vec<VectorPath>) -> Result<(), EditError> {
+    use crate::connectors::{ARROW_MAX, JOIN_TOL, dangling_ends, is_arrowhead, is_polyline, near, points_of};
+    let mut have: HashSet<usize> = found.iter().map(|p| p.id).collect();
+    let mut frontier: Vec<([f64; 2], [f64; 3], f64)> =
+        dangling_ends(found).into_iter().filter_map(|(pt, i)| found.get(i).map(|p| (pt, p.color, p.stroke_width))).collect();
+    let mut added = 0usize;
+    for _ in 0..TRACE_HOPS {
+        if frontier.is_empty() || added >= MAX_TRACED {
+            break;
+        }
+        let pts: Vec<[f64; 2]> = frontier.iter().map(|f| f.0).collect();
+        let want = |id: usize, b: [f64; 4]| {
+            !have.contains(&id)
+                && pts.iter().any(|p| b[0] - JOIN_TOL <= p[0] && p[0] <= b[2] + JOIN_TOL && b[1] - JOIN_TOL <= p[1] && p[1] <= b[3] + JOIN_TOL)
+        };
+        let candidates = scan(doc, page, MAX_TRACED * 4, &want)?.paths;
+        let mut next = Vec::new();
+        for c in candidates {
+            if added >= MAX_TRACED {
+                break;
+            }
+            let cp = points_of(&c);
+            let Some(hit) = frontier.iter().find(|f| cp.iter().any(|q| near(*q, f.0, JOIN_TOL))).copied() else { continue };
+            let same_style = c.color.iter().zip(hit.1).all(|(a, b)| (a - b).abs() < 0.02) && (c.stroke_width - hit.2).abs() <= 0.25 * hit.2.max(0.1);
+            let longer = is_polyline(&c) && same_style && (c.bbox[2] - c.bbox[0]).max(c.bbox[3] - c.bbox[1]) > ARROW_MAX;
+            if is_arrowhead(&c) || longer {
+                if longer && let Some(far) = [cp.first(), cp.last()].into_iter().flatten().find(|q| !near(**q, hit.0, JOIN_TOL)) {
+                    next.push((*far, c.color, c.stroke_width));
+                }
+                have.insert(c.id);
+                found.push(c);
+                added += 1;
+            }
+        }
+        frontier = next;
+    }
+    Ok(())
 }
 
 fn finite_seg_points(segs: &[PathSeg]) -> bool {

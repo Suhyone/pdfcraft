@@ -7,9 +7,10 @@
 //! the paths are read again ([`refresh`]), so what is shown is what the page draws.
 
 use egui::{Color32, Pos2, Rect, Shape, Stroke};
-use pdfcraft_engine::{Edit, PathSeg, VectorEdits, VectorPatch, VectorPath};
+use pdfcraft_engine::{Connector, Edit, PathSeg, VectorEdits, VectorPatch, VectorPath};
 use pdfcraft_render::DocInfo;
 
+use super::vector_connector::{self as callout, Snapshot};
 use crate::canvas::{DocView, PageXform};
 use crate::page_cursor::Layer;
 use crate::page_keys::PageKeys;
@@ -24,6 +25,10 @@ const SNAP: f32 = 6.0;
 const CURVE_STEPS: usize = 16;
 /// How close (screen points) a press must be to a path to select it.
 const PICK: f32 = 5.0;
+/// The most paths one rectangle may pick up (the engine's own limit, as the message names it).
+const MAX_OBJECTS: usize = 100;
+/// A click picks up the lines within this many page units of it.
+const CLICK_REACH: f32 = 3.0;
 const BLUE: Color32 = Color32::from_rgb(0x14, 0x73, 0xE6);
 
 /// The paths picked up on one page, and the point being dragged.
@@ -39,6 +44,37 @@ pub struct VectorEditState {
     pub selected: Option<usize>,
     /// The point being dragged: path index, segment index and which of its points.
     pub(crate) grab: Option<(usize, usize, VectorHandle)>,
+    /// The callouts among `paths`: a leader line with its frame and arrowhead.
+    pub connectors: Vec<Connector>,
+    /// The paths of the callout being dragged, as they were when the drag began.
+    pub(crate) snapshot: Snapshot,
+    /// The frame being dragged, and where in the page the drag began.
+    pub(crate) body: Option<BodyGrab>,
+}
+
+/// A callout's frame held by the pointer: the picked-up path's index, and the page point (user
+/// space) the press landed on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct BodyGrab {
+    pub frame: usize,
+    pub origin: [f64; 2],
+}
+
+impl VectorEditState {
+    pub fn new(page: usize, region: [f64; 4], paths: Vec<VectorPath>, generation: u64) -> Self {
+        let connectors = pdfcraft_engine::connectors(&paths);
+        Self { page, region, paths, generation, selected: None, grab: None, connectors, snapshot: Vec::new(), body: None }
+    }
+
+    /// The callout whose leader is picked-up path `index`.
+    fn connector_of_leader(&self, index: usize) -> Option<&Connector> {
+        self.connectors.iter().find(|c| c.leader == index)
+    }
+
+    /// The callouts that hang on the frame `index`.
+    fn connectors_on(&self, frame: usize) -> Vec<Connector> {
+        self.connectors.iter().filter(|c| c.frame == Some(frame)).cloned().collect()
+    }
 }
 
 /// The point of a segment a handle names.
@@ -154,8 +190,56 @@ pub(crate) fn hit(xf: &PageXform, info: &DocInfo, page: usize, view: &DocView, p
             }
         }
     }
-    let (_, path, seg, handle) = best?;
-    Some(Hit::new(Owner::VectorNode { path, seg, handle }, Layer::Handle, egui::CursorIcon::Grab))
+    if let Some((_, path, seg, handle)) = best {
+        return Some(Hit::new(Owner::VectorNode { path, seg, handle }, Layer::Handle, egui::CursorIcon::Grab));
+    }
+    // The middle of a piece of the selected leader line: the handle that makes a corner.
+    if let Some(pi) = state.selected.filter(|i| state.connector_of_leader(*i).is_some())
+        && let Some(path) = state.paths.get(pi)
+    {
+        for (seg, mid) in mid_points(path) {
+            if to_screen(xf, info, page, mid).distance(p) <= GRAB {
+                return Some(Hit::new(Owner::VectorNode { path: pi, seg, handle: VectorHandle::Mid }, Layer::Handle, egui::CursorIcon::Grab));
+            }
+        }
+    }
+    // The frame of a callout: its edge, or anywhere inside it.
+    for fi in state.connectors.iter().filter_map(|c| c.frame) {
+        let Some(frame) = state.paths.get(fi) else { continue };
+        let runs = outline(xf, info, page, frame);
+        let on_edge = runs.iter().flat_map(|run| run.windows(2).map(|w| distance_to_segment(p, w[0], w[1]))).fold(f32::INFINITY, f32::min) <= PICK;
+        if on_edge || runs.iter().any(|run| inside_polygon(run, p)) {
+            return Some(Hit::new(Owner::VectorBody { path: fi }, Layer::Handle, egui::CursorIcon::Move));
+        }
+    }
+    None
+}
+
+/// The middle of each straight piece of a path: (the segment that ends the piece, where its middle is).
+fn mid_points(path: &VectorPath) -> Vec<(usize, [f64; 2])> {
+    let mut out = Vec::new();
+    for k in 1..path.segments.len() {
+        let (Some(PathSeg::LineTo(end)), Some(PathSeg::MoveTo(start) | PathSeg::LineTo(start))) = (path.segments.get(k), path.segments.get(k - 1))
+        else {
+            continue;
+        };
+        out.push((k, [(start[0] + end[0]) / 2.0, (start[1] + end[1]) / 2.0]));
+    }
+    out
+}
+
+/// Whether `p` is inside the polygon `run` (even-odd rule).
+fn inside_polygon(run: &[Pos2], p: Pos2) -> bool {
+    let mut inside = false;
+    let mut j = run.len().wrapping_sub(1);
+    for i in 0..run.len() {
+        let (a, b) = (run[i], run[j]);
+        if (a.y > p.y) != (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x {
+            inside = !inside;
+        }
+        j = i;
+    }
+    inside
 }
 
 /// The path nearest to `p` within [`PICK`] screen points, to select it by a click.
@@ -195,8 +279,37 @@ pub(crate) struct PageRef<'a> {
     pub page: usize,
 }
 
-/// Dragging: a point's own press ([`hit`]) picks it up; a click on a path selects it.
-/// A press nobody holds is the region marquee's (`zoom_snap::page_input`).
+/// Start the drag a press began: a point of a path, a new corner on a leader line, or a callout's frame.
+fn begin_drag(state: &mut VectorEditState, owner: Owner, at: Option<[f64; 2]>) {
+    match owner {
+        Owner::VectorNode { path, seg, handle } => {
+            state.selected = Some(path);
+            state.snapshot = state.connector_of_leader(path).cloned().map(|c| callout::snapshot(&state.paths, &[c], false)).unwrap_or_default();
+            let mut handle = handle;
+            if handle == VectorHandle::Mid {
+                // The new corner is a sharp vertex in the middle of the piece; it is then dragged like any point.
+                if state.paths.get_mut(path).and_then(|p| callout::insert_corner(p, seg)).is_none() {
+                    state.snapshot.clear();
+                    return;
+                }
+                handle = VectorHandle::Endpoint;
+            }
+            state.grab = Some((path, seg, handle));
+        }
+        Owner::VectorBody { path } => {
+            if let Some(origin) = at {
+                state.selected = Some(path);
+                state.snapshot = callout::snapshot(&state.paths, &state.connectors_on(path), true);
+                state.body = Some(BodyGrab { frame: path, origin });
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Dragging: a point's own press ([`hit`]) picks it up; a click on a path selects it; a triple
+/// click on a bent callout takes its bends out. A press nobody holds is the region marquee's
+/// (`zoom_snap::page_input`).
 pub(crate) fn page_input(resp: &egui::Response, ptr: &PagePointer, at: PageRef<'_>, view: &mut DocView, allowed: bool, press: PagePress) {
     let PageRef { xf, info, page } = at;
     let pointer = ptr.pos;
@@ -207,60 +320,105 @@ pub(crate) fn page_input(resp: &egui::Response, ptr: &PagePointer, at: PageRef<'
         return;
     }
     if ptr.drag_started
-        && let PagePress::Mine(Owner::VectorNode { path, seg, handle }) = press
+        && let PagePress::Mine(owner) = press
         && let Some(state) = view.vector_edit.as_mut().filter(|s| s.page == page)
     {
-        state.selected = Some(path);
-        state.grab = Some((path, seg, handle));
+        begin_drag(state, owner, ptr.origin.or(pointer).and_then(|p| to_user(xf, info, page, p)));
     }
     // A click on a path (not on one of its points) selects it, on nothing clears the selection.
     if resp.clicked()
-        && press == PagePress::Free
         && let Some(p) = ptr.released.filter(|p| xf.rect.contains(*p))
         && let Some(state) = view.vector_edit.as_mut().filter(|s| s.page == page)
     {
-        state.selected = path_at(xf, info, page, state, p);
+        match press {
+            PagePress::Free => state.selected = path_at(xf, info, page, state, p),
+            PagePress::Mine(Owner::VectorBody { path }) => state.selected = Some(path),
+            PagePress::Mine(_) | PagePress::Elsewhere => {}
+        }
+    }
+    // Triple click on a bent callout: back to a straight line.
+    if resp.triple_clicked()
+        && press == PagePress::Free
+        && let Some(state) = view.vector_edit.as_mut().filter(|s| s.page == page)
+        && state.grab.is_none()
+        && let Some(c) = state.selected.and_then(|i| state.connector_of_leader(i)).cloned()
+        && callout::is_bent(&state.paths, &c)
+    {
+        state.snapshot = callout::snapshot(&state.paths, std::slice::from_ref(&c), false);
+        callout::straighten(&mut state.paths, &state.snapshot, &c);
+        let patches = callout::patches(&state.paths, &state.snapshot);
+        state.snapshot.clear();
+        view.pending_edit = Some(Edit::EditVectors { page, edits: VectorEdits { patches, ..Default::default() } });
     }
     let Some(state) = view.vector_edit.as_mut().filter(|s| s.page == page) else { return };
-    let Some((pi, si, handle)) = state.grab else { return };
-    view.cursor.claim(Layer::Drag, egui::CursorIcon::Grabbing);
-    if let Some(at) = pointer
-        && let Some(mut target) = to_user(xf, info, page, at)
-    {
-        let shift = ptr.modifiers.shift;
-        // Endpoint snapping to another point of the picked-up paths within a few screen points.
-        let snapped = state
-            .paths
-            .iter()
-            .enumerate()
-            .flat_map(|(i, p)| handles(p).into_iter().filter(move |(s, h, _)| !(i == pi && *s == si && *h == handle)).map(|(_, _, pt)| pt))
-            .map(|pt| (to_screen(xf, info, page, pt).distance(at), pt))
-            .filter(|(d, _)| *d <= SNAP)
-            .min_by(|a, b| a.0.total_cmp(&b.0))
-            .map(|(_, pt)| pt);
-        if let Some(pt) = snapped {
-            target = pt;
-        } else if shift && let Some(path) = state.paths.get(pi) {
-            // From the neighbouring point: the one before in the path, else the one after.
-            let neighbour = si
-                .checked_sub(1)
-                .and_then(|j| path.segments.get(j))
-                .and_then(|s| point_of(s, VectorHandle::Endpoint))
-                .or_else(|| path.segments.get(si + 1).and_then(|s| point_of(s, VectorHandle::Endpoint)));
-            if let Some(from) = neighbour {
-                target = snap_angle(from, target);
+    let mut commit: Option<Vec<VectorPatch>> = None;
+    if let Some(body) = state.body {
+        // A callout's frame: it follows the pointer and its leader lines follow it.
+        view.cursor.claim(Layer::Drag, egui::CursorIcon::Move);
+        if let Some(cur) = pointer.and_then(|at| to_user(xf, info, page, at)) {
+            let delta = [cur[0] - body.origin[0], cur[1] - body.origin[1]];
+            for c in state.connectors_on(body.frame) {
+                callout::move_frame(&mut state.paths, &state.snapshot, &c, delta);
             }
         }
-        if let Some(seg) = state.paths.get_mut(pi).and_then(|p| p.segments.get_mut(si)) {
-            set_point(seg, handle, target);
+        if resp.drag_stopped() || !ptr.primary_down {
+            state.body = None;
+            commit = Some(callout::patches(&state.paths, &state.snapshot));
+            state.snapshot.clear();
+        }
+    } else if let Some((pi, si, handle)) = state.grab {
+        view.cursor.claim(Layer::Drag, egui::CursorIcon::Grabbing);
+        if let Some(at) = pointer
+            && let Some(mut target) = to_user(xf, info, page, at)
+        {
+            let shift = ptr.modifiers.shift;
+            // Endpoint snapping to another point of the picked-up paths within a few screen points.
+            let snapped = state
+                .paths
+                .iter()
+                .enumerate()
+                .flat_map(|(i, p)| handles(p).into_iter().filter(move |(s, h, _)| !(i == pi && *s == si && *h == handle)).map(|(_, _, pt)| pt))
+                .map(|pt| (to_screen(xf, info, page, pt).distance(at), pt))
+                .filter(|(d, _)| *d <= SNAP)
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+                .map(|(_, pt)| pt);
+            if let Some(pt) = snapped {
+                target = pt;
+            } else if shift && let Some(path) = state.paths.get(pi) {
+                // From the neighbouring point: the one before in the path, else the one after.
+                let neighbour = si
+                    .checked_sub(1)
+                    .and_then(|j| path.segments.get(j))
+                    .and_then(|s| point_of(s, VectorHandle::Endpoint))
+                    .or_else(|| path.segments.get(si + 1).and_then(|s| point_of(s, VectorHandle::Endpoint)));
+                if let Some(from) = neighbour {
+                    target = snap_angle(from, target);
+                }
+            }
+            if let Some(seg) = state.paths.get_mut(pi).and_then(|p| p.segments.get_mut(si)) {
+                set_point(seg, handle, target);
+            }
+            // The arrowhead of a callout follows its leader's head end.
+            if let Some(c) = state.connector_of_leader(pi).cloned() {
+                callout::follow_head(&mut state.paths, &state.snapshot, &c);
+            }
+        }
+        if resp.drag_stopped() || !ptr.primary_down {
+            state.grab = None;
+            commit = Some(if state.snapshot.is_empty() {
+                state
+                    .paths
+                    .get(pi)
+                    .map(|path| vec![VectorPatch { id: path.id, segments: path.segments.clone(), stroke_width: None, color: None }])
+                    .unwrap_or_default()
+            } else {
+                callout::patches(&state.paths, &state.snapshot)
+            });
+            state.snapshot.clear();
         }
     }
-    if resp.drag_stopped() || !ptr.primary_down {
-        state.grab = None;
-        if let Some(path) = state.paths.get(pi) {
-            let patch = VectorPatch { id: path.id, segments: path.segments.clone(), stroke_width: None, color: None };
-            view.pending_edit = Some(Edit::EditVectors { page, edits: VectorEdits { patches: vec![patch], ..Default::default() } });
-        }
+    if let Some(patches) = commit.filter(|p| !p.is_empty()) {
+        view.pending_edit = Some(Edit::EditVectors { page, edits: VectorEdits { patches, ..Default::default() } });
     }
 }
 
@@ -282,12 +440,19 @@ pub(crate) fn paint(painter: &egui::Painter, xf: &PageXform, info: &DocInfo, pag
         for run in outline(xf, info, page, path) {
             painter.add(Shape::line(run, stroke));
         }
+        if selected && state.connector_of_leader(pi).is_some() {
+            // The translucent middle of each piece: drag it to make a corner.
+            for (_, mid) in mid_points(path) {
+                painter.circle(to_screen(xf, info, page, mid), 5.0, BLUE.gamma_multiply(0.3), Stroke::new(1.0, BLUE.gamma_multiply(0.6)));
+            }
+        }
         for (si, h, p) in handles(path) {
             let at = to_screen(xf, info, page, p);
             match h {
                 VectorHandle::Endpoint => {
                     painter.rect_filled(Rect::from_center_size(at, egui::vec2(7.0, 7.0)), 0.0, BLUE);
                 }
+                VectorHandle::Mid => {}
                 VectorHandle::Ctrl1 | VectorHandle::Ctrl2 => {
                     if selected {
                         // The tangent runs to the end point this handle belongs to.
@@ -337,27 +502,61 @@ pub(crate) fn refresh(view: &mut DocView, generation: u64, read: impl FnOnce(usi
     let selected_id = state.selected.and_then(|i| state.paths.get(i)).map(|p| p.id);
     if let Some(paths) = read(state.page, state.region) {
         state.selected = selected_id.and_then(|id| paths.iter().position(|p| p.id == id));
+        state.connectors = pdfcraft_engine::connectors(&paths);
         state.paths = paths;
     }
     state.generation = generation;
 }
 
 impl crate::PdfCraftApp {
-    /// A rectangle dragged with the vector tool: pick up the line art inside it. A click is
-    /// not a rectangle.
+    /// A rectangle dragged with the vector tool: pick up the line art inside it. A click on a page
+    /// with nothing picked up picks up the lines right under it (single-click select); with
+    /// paths picked up, a click only selects one of them (`page_input`). More than 100 paths in
+    /// the rectangle are refused with a message.
     pub(crate) fn finish_vector_region(&mut self, index: usize, done: crate::zoom_snap::Marquee) {
         let (page, _, v) = done;
-        let Some(view) = self.views.get_mut(index) else { return };
-        // A click is no rectangle: it selects or clears a selection in `page_input`.
-        if v[2] - v[0] < 2.0 || v[3] - v[1] < 2.0 {
+        let click = v[2] - v[0] < 2.0 || v[3] - v[1] < 2.0;
+        let Some(view) = self.views.get(index) else { return };
+        if click && view.vector_edit.as_ref().is_some_and(|s| s.page == page) {
             return;
         }
-        let Some(doc) = self.session.get(view.id).filter(|d| d.allows_modification()) else { return };
-        let Some(info) = doc.info.pages.get(page) else { return };
-        let (a, b) = (info.view_to_user(v[0], v[1]), info.view_to_user(v[2], v[3]));
-        let region = [a[0].min(b[0]), a[1].min(b[1]), a[0].max(b[0]), a[1].max(b[1])].map(f64::from);
-        let paths = doc.vector_paths_in_region(page, region).unwrap_or_default();
-        view.vector_edit = Some(VectorEditState { page, region, paths, generation: doc.edit_generation(), selected: None, grab: None });
+        let id = view.id;
+        let (region, read, generation) = {
+            let Some(doc) = self.session.get(id).filter(|d| d.allows_modification()) else { return };
+            let Some(info) = doc.info.pages.get(page) else { return };
+            let v = if click {
+                let (cx, cy) = ((v[0] + v[2]) / 2.0, (v[1] + v[3]) / 2.0);
+                [cx - CLICK_REACH, cy - CLICK_REACH, cx + CLICK_REACH, cy + CLICK_REACH]
+            } else {
+                v
+            };
+            let (a, b) = (info.view_to_user(v[0], v[1]), info.view_to_user(v[2], v[3]));
+            let region = [a[0].min(b[0]), a[1].min(b[1]), a[0].max(b[0]), a[1].max(b[1])].map(f64::from);
+            (region, doc.vector_paths_in_region(page, region), doc.edit_generation())
+        };
+        match read {
+            Ok(paths) if click && paths.is_empty() => {}
+            Ok(paths) => {
+                let mut state = VectorEditState::new(page, region, paths, generation);
+                if click {
+                    state.selected = Some(0);
+                }
+                if let Some(view) = self.views.get_mut(index) {
+                    view.vector_edit = Some(state);
+                }
+            }
+            Err(e) => match pdfcraft_engine::vector_json::too_many(&e) {
+                Some(n) => {
+                    if let Some(view) = self.views.get_mut(index) {
+                        view.vector_edit = None;
+                    }
+                    self.notify(format!(
+                        "That area holds more than {MAX_OBJECTS} lines ({n} found). Drag a smaller rectangle, or click a single line to pick it up on its own."
+                    ));
+                }
+                None => self.notify_error(e),
+            },
+        }
     }
 
     /// Read the picked-up paths again after the document changed under them.

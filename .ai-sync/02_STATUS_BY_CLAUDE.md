@@ -49,3 +49,10 @@
 - JS: window.pdfcraft.extractVectorsInRect(page,x,y,w,h) and applyVectorEdits(page,deleted,modified) with ?control (control methods vector.extract / vector.apply).
 - Tested on a real 5-page piping drawing PDF (read only, in memory): 500+ paths on page 1 in ~95 ms, delete of 3 paths 15 -> 12 in region.
 - Not verified: dist-pdf-tool/ still has the OLD wasm; rebuild/copy needed before upload.
+
+## Callouts, 100-object cap, smooth zoom
+- Region read stops at 100 paths: `TOO_MANY_OBJECTS:N` (control/WASM reply `{"error":"TOO_MANY_OBJECTS","count":N}`); UI shows a message; a click with nothing picked up picks the lines under it.
+- Leader lines leaving the region are followed to their arrowhead (`crates/edit/src/connectors.rs`, `vectors.rs`).
+- Callout UI (`tools/vector_connector.rs`, `vector_ui.rs`): frame drag re-aims a straight leader / keeps a bent one, middle handle makes a sharp corner, triple click straightens. Not done: text glyphs inside the frame do not move with it.
+- Zoom: every page holds its sharp re-render 150 ms after the zoom stops (heavy pages 350 ms as before).
+- wasm rebuilt into dist-pdf-tool/ (pdfcraft-web-52e5e241559687ef.js, pdfcraft-web-9f22e7e0342949d_bg.wasm, ocr worker 64bb0bb3584e8f8b).
